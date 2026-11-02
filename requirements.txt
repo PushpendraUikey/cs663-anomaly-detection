@@ -1,0 +1,15 @@
+# No NVIDIA GPU locally -> install CPU-only torch first (avoids ~2.5 GB of CUDA wheels):
+#   pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#   pip install --no-cache-dir -r requirements.txt
+# On Colab, torch/torchvision are preinstalled with CUDA; just install the rest.
+torch>=2.2
+torchvision>=0.17
+numpy
+scipy
+scikit-learn
+scikit-image
+opencv-python
+matplotlib
+pandas
+tqdm
+pytest
