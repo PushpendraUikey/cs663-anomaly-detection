@@ -26,6 +26,8 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--categories", nargs="+", default=["carpet", "grid", "leather", "bottle", "hazelnut"])
     p.add_argument("--ks", nargs="+", type=int, default=[1, 5, 10, 20, 50, 100, 200])
+    p.add_argument("--main-k", type=int, default=50,
+                   help="k used in the method comparison; fixed before comparing methods, not tuned on test")
     p.add_argument("--size", type=int, default=128, help="image side length in pixels")
     p.add_argument("--sigma", type=float, default=2.0, help="Gaussian smoothing of the map, in pixels")
     p.add_argument("--seed", type=int, default=0)
@@ -78,7 +80,8 @@ def main():
         writer.writerows(rows)
     args.fig.parent.mkdir(parents=True, exist_ok=True)
     plot_metric_sweep(rows, "k", ["image_auroc", "pixel_auroc"], args.fig,
-                      log_x=True, xlabel="number of components k")
+                      log_x=True, xlabel="number of components k",
+                      mark_x=args.main_k, mark_label=f"k = {args.main_k} (used in comparison)")
     print(f"wrote {args.out} and {args.fig}")
 
 
