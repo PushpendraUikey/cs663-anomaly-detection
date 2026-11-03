@@ -9,9 +9,15 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
+from torch.utils.data import Dataset
 
 # src/anomaly/data.py -> parents[2] is the project root
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "data" / "mvtec_ad"
+
+# Per-channel RGB statistics of ImageNet; the pretrained ResNet-18 expects them.
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 def _category_dir(category, root):
@@ -78,3 +84,52 @@ def load_mask(path, size):
     # so the resized mask is still binary.
     mask = cv2.resize(mask, (size, size), interpolation=cv2.INTER_NEAREST)
     return (mask > 127).astype(np.uint8)
+
+
+def center_crop(arr, crop):
+    """Central crop x crop window of an (H, W) or (H, W, C) array."""
+    h, w = arr.shape[:2]
+    top, left = (h - crop) // 2, (w - crop) // 2
+    return arr[top:top + crop, left:left + crop]
+
+
+class MVTecDataset(Dataset):
+    """One MVTec category, one split.
+
+    Each item is (image, label, mask):
+        image: float32 tensor (3, S, S), S = crop or size
+        label: int, 0 = good, 1 = defective (always 0 for train)
+        mask:  uint8 tensor (S, S), values {0, 1}
+
+    size:      side length after resizing
+    crop:      optional centre crop after resizing (PaDiM paper: size=256, crop=224)
+    normalize: subtract ImageNet mean, divide by std (needed for ResNet features)
+    """
+
+    def __init__(self, category, split, size=224, crop=None, normalize=False,
+                 root=DEFAULT_ROOT):
+        if split == "train":
+            self.samples = [(p, 0, None) for p in list_train(category, root)]
+        elif split == "test":
+            self.samples = list_test(category, root)
+        else:
+            raise ValueError(f"split must be 'train' or 'test', got {split!r}")
+        if crop is not None and crop > size:
+            raise ValueError(f"crop ({crop}) larger than size ({size})")
+        self.size, self.crop, self.normalize = size, crop, normalize
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, i):
+        img_path, label, mask_path = self.samples[i]
+        img = load_image(img_path, self.size)
+        mask = load_mask(mask_path, self.size)
+        if self.crop is not None:
+            # same window for image and mask, so they stay pixel-aligned
+            img, mask = center_crop(img, self.crop), center_crop(mask, self.crop)
+        if self.normalize:
+            img = (img - IMAGENET_MEAN) / IMAGENET_STD  # broadcasts over H, W
+        # numpy is (H, W, C); torch convolutions expect (C, H, W)
+        img = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1)))
+        return img, label, torch.from_numpy(np.ascontiguousarray(mask))
