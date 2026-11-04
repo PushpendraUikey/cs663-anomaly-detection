@@ -47,3 +47,19 @@ Fit 3-5 s per category (CPU), inference ~1 ms per image.
   0.949 at k = 50 -> 0.941 at k = 200, where 99.8% of training variance is explained.
 - Grid still improving at k = 200: regular pattern with small shifts needs many components.
 - Motivation for PaDiM: model local deep features per patch instead of whole-image pixels.
+
+## PaDiM (Step 4)
+### 4a: feature extraction (`src/anomaly/padim.py`, `FeatureExtractor`)
+- Frozen torchvision ResNet-18, IMAGENET1K_V1, eval mode (BatchNorm uses stored ImageNet statistics).
+  Forward pass stops after layer3, so layer4 and the classifier are never computed.
+- Input 256 -> centre crop 224 (paper setting). Output grid 56 x 56 (stride 4); each grid cell is
+  one 4 x 4-pixel "patch" with a 448-dim embedding: layer1 (64) + layer2 (128, upsampled x2) +
+  layer3 (256, upsampled x4), bilinear.
+- Theoretical receptive fields (computed by hand, see below): layer1 43 px, layer2 99 px,
+  layer3 211 px. layer1 = fine local texture/edges, layer3 = context covering most of the image.
+  Mixing them gives each patch both local detail and context.
+  RF recursion: r_out = r_in + (kernel - 1) * (input stride). Stem: conv7 s2 -> 7, maxpool3 s2 -> 11.
+  layer1 (4 conv3x3 at stride 4): 11 + 4*8 = 43. layer2: +8 (strided conv) + 3*16 = 99.
+  layer3: +16 + 3*32 = 211.
+- CPU: ~19 ms per image for the backbone. Full 448-channel features of 280 carpet training images
+  would take 1.57 GB, which is why channels are reduced (d = 100) before storing them.
