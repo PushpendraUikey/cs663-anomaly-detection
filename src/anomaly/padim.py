@@ -1,6 +1,7 @@
 """PaDiM: a Gaussian per patch position over frozen ResNet-18 features.
 
-Step 1 of the method: turn each image into a grid of patch embeddings.
+1. FeatureExtractor turns each image into a grid of patch embeddings.
+2. PaDiM.fit keeps d of the channels and fits mean + covariance per position.
 """
 import torch
 import torch.nn.functional as F
@@ -58,3 +59,57 @@ class FeatureExtractor(nn.Module):
                  F.interpolate(f, size=grid, mode="bilinear", align_corners=False)
                  for f in feats]
         return torch.cat(feats, dim=1)
+
+
+def random_channel_index(n_channels, d, seed=0):
+    """d distinct channel indices out of n_channels, fixed by the seed, sorted."""
+    g = torch.Generator().manual_seed(seed)
+    return torch.randperm(n_channels, generator=g)[:d].sort().values
+
+
+def gaussian_from_sums(n, s1, s2, eps):
+    """Mean and regularised covariance per position from running sums.
+
+    s1 = sum_i x_i         (P, d)
+    s2 = sum_i x_i x_i^T   (P, d, d)
+    cov = (s2 - n mu mu^T) / (n - 1) + eps I    (unbiased, same as np.cov)
+    """
+    mean = s1 / n
+    cov = (s2 - n * mean[:, :, None] * mean[:, None, :]) / (n - 1)
+    cov = cov + eps * torch.eye(cov.shape[-1], dtype=cov.dtype)
+    return mean.float(), cov.float()
+
+
+class PaDiM:
+    def __init__(self, layers=LAYERS, d=100, eps=0.01, seed=0, device=None,
+                 weights=ResNet18_Weights.IMAGENET1K_V1):
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.extractor = FeatureExtractor(layers, weights).to(self.device)
+        n_channels = self.extractor.out_channels
+        if not 1 <= d <= n_channels:
+            raise ValueError(f"d must be in [1, {n_channels}], got {d}")
+        self.idx = random_channel_index(n_channels, d, seed).to(self.device)
+        self.d, self.eps = d, eps
+
+    def embed(self, images):
+        """(B, 3, H, W) normalised images -> (B, d, H/4, W/4) embeddings on CPU."""
+        feats = self.extractor(images.to(self.device))
+        return feats[:, self.idx].cpu()
+
+    def fit(self, loader):
+        """loader yields (images, labels, masks) batches of defect-free images."""
+        n, s1, s2 = 0, 0.0, 0.0
+        for images, _, _ in loader:
+            e = self.embed(images)                              # (B, d, H, W)
+            b, d, h, w = e.shape
+            # one row per position: (P, B, d) with P = H*W. float64 because
+            # s2 - n mu mu^T subtracts two large, nearly equal numbers.
+            e = e.reshape(b, d, h * w).permute(2, 0, 1).double()
+            s1 = s1 + e.sum(dim=1)                              # (P, d)
+            s2 = s2 + e.transpose(1, 2) @ e                     # (P, d, d), sum of outer products
+            n += b
+        if n < 2:
+            raise ValueError("need at least 2 training images to estimate a covariance")
+        self.grid = (h, w)
+        self.mean, self.cov = gaussian_from_sums(n, s1, s2, self.eps)
+        return self

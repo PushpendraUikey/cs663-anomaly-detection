@@ -63,3 +63,23 @@ Fit 3-5 s per category (CPU), inference ~1 ms per image.
   layer3: +16 + 3*32 = 211.
 - CPU: ~19 ms per image for the backbone. Full 448-channel features of 280 carpet training images
   would take 1.57 GB, which is why channels are reduced (d = 100) before storing them.
+
+### 4b: channel selection and Gaussian fit (`PaDiM.fit`)
+- d = 100 of the 448 channels chosen uniformly at random (seeded, `random_channel_index`); the same
+  indices are used for training and test.
+- Per position p (3136 = 56 x 56 of them): mu_p = mean, Sigma_p = unbiased sample covariance + eps I,
+  eps = 0.01. This is the multivariate Gaussian MLE from the course (MLE divides by N; we use N-1 like
+  the paper / np.cov; the difference is a factor 280/279).
+- Memory: covariances are accumulated as running sums s1 = sum x, s2 = sum x x^T (float64), using
+  Sigma = (s2 - N mu mu^T)/(N-1). Peak RAM ~1.3 GB on carpet, independent of N (the laptop has 6 GB).
+  Checked against the two-pass formula on real features: max difference 1.5e-11.
+- Carpet: fit 17 s on CPU for 280 images (feature extraction dominates).
+- **Why eps is necessary (measured, carpet):** every one of the 3136 positions has at least one
+  channel (median 4, max 9) that is exactly 0 in all 280 training images. A ReLU unit that never
+  fires on carpet has zero variance, so Sigma_p is singular (smallest eigenvalue ~1e-19, i.e. 0) and
+  Sigma_p^{-1} does not exist, even though N = 280 > d = 100. With eps = 0.01 the smallest eigenvalue
+  is 0.01 and the median condition number is 33. Dead channels by layer: layer1 1, layer2 4,
+  layer3 15 (deeper ImageNet features are more object-specific and often silent on textures).
+- Consequence for scoring: if a test patch activates a channel that was always 0 in training, it
+  adds x^2/eps to the squared Mahalanobis distance, so eps sets how strongly "never seen before"
+  is penalised. This is what the eps sweep (1e-3 to 1) measures.
