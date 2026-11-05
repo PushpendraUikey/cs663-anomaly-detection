@@ -142,9 +142,22 @@ Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 22
   vs PIL resizing, which 100 random channels were drawn (seed).
 - Biggest gain over PCA is on textures (carpet +34 pp image AUROC): local deep features capture
   texture statistics that pixel-space PCA cannot.
-- **Open issue: hazelnut image AUROC 0.809, below PCA (0.923)**, although its pixel AUROC is fine
-  (0.975). Localization works but the max-of-map image score separates good/defective images poorly.
-  To be analysed (which good images score high, and why).
+- **Hazelnut image AUROC 0.809, below PCA (0.923)**, although its pixel AUROC is fine (0.975).
+  Analysis (figure `results/figures/padim_hazelnut_false_alarms.png`):
+  - Top good-image scores (26.6, 26.3, 25.3, 24.6) are above the median of every defect type
+    (crack 16.9, cut 15.6, hole 20.9, print 18.8). The six worst good images cause most of the loss.
+  - In 5 of the top 6 the maximum is at **row 0, on the black background**, not on the nut. Zooming
+    in shows a pair of tiny bright specks (dust/lint) at the top edge, visible in several good test
+    images. PaDiM correctly finds them unusual for that position; they are just not labelled defects.
+    9/40 good vs 3/70 defective images have their max in the top 10 rows.
+  - 4th worst (039): hot spots at the two tips of a nut lying sideways, i.e. an orientation effect
+    (link to the misalignment extension).
+  - Pixel AUROC is unaffected: a few hundred hot background pixels are negligible among ~5.5 M.
+  - Diagnostics only (found by looking at test data, so **not** adopted as the method): ignoring a
+    16-px border gives 0.943; mean of the top 1% of pixels instead of the max gives 0.923.
+    The image score stays max-of-map, as in the paper.
+  - Slide message: max-of-map is sensitive to a single small out-of-distribution blob anywhere,
+    including acquisition artefacts; image AUROC and pixel AUROC measure different things.
 - Timing: fit 13-28 s per category, ~50-65 ms per test image on CPU (paper: 0.23 s/image on an older
   CPU). Caveat for the comparison slide: PCA runs at 128 px without crop, PaDiM at 224 after a
   256 -> 224 centre crop, so pixel AUROCs are computed on slightly different regions/resolutions.
