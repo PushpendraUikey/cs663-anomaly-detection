@@ -98,3 +98,16 @@ Fit 3-5 s per category (CPU), inference ~1 ms per image.
   On carpet 79 of the 100 eigenvalues are below eps = 0.01; sum lambda/(lambda+eps) has median 25.5,
   sqrt = 5.05, matching the observed ~5.4 on good test images. So eps also sets the effective
   dimension of the model (link to the eps sweep).
+
+### 4c-ii: anomaly map and image score (`PaDiM.predict`)
+- 56 x 56 Mahalanobis grid -> bilinear upsample to the 224 input size -> Gaussian blur sigma = 4
+  (scipy `gaussian_filter`, the same function as the PCA baseline, so smoothing is identical across
+  methods) -> image score = max of the map. Same (maps, scores) output contract as `PCAModel.predict`.
+- Carpet "cut" example: grid max 22.2 -> upsampled 21.2 -> blurred 17.9. Inside-defect mean barely
+  changes (11.8 -> 11.7); the max drops because blur averages isolated spikes away. The 56 grid
+  shows scattered single bright cells outside the defect (noise); after blurring only the coherent
+  defect blob remains. That's why the image score is taken after blurring.
+- Upsampling and blurring are weighted averages with non-negative weights summing to 1, so the map
+  can never exceed the largest patch distance (tested).
+- Good qualitative figure for slides: input | ground truth | 56 grid | final map (regenerate in the
+  viz step).

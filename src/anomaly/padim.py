@@ -2,7 +2,9 @@
 
 1. FeatureExtractor turns each image into a grid of patch embeddings.
 2. PaDiM.fit keeps d of the channels and fits mean + covariance per position.
+3. PaDiM.predict scores test images: Mahalanobis grid -> upsample -> blur -> max.
 """
+from scipy.ndimage import gaussian_filter
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -130,3 +132,17 @@ class PaDiM:
         m2 = ((diff @ self.precision) * diff).sum(dim=-1)       # (P, B)
         # m2 >= 0 in exact arithmetic; clamp tiny negative round-off before the square root
         return m2.clamp_min(0).sqrt().T.reshape(b, h, w)
+
+    def predict(self, images, sigma=4.0):
+        """Anomaly maps (B, H, W) at input resolution and image scores (B,), as numpy.
+
+        Same output contract as PCAModel.predict, so scripts can treat methods alike.
+        """
+        dist = self.mahalanobis(images)                          # (B, H/4, W/4)
+        maps = F.interpolate(dist[:, None], size=images.shape[-2:],
+                             mode="bilinear", align_corners=False)[:, 0].numpy()   # (B, H, W)
+        if sigma > 0:
+            # same smoothing as the PCA baseline: within each image, never across the batch
+            maps = gaussian_filter(maps, sigma=(0, sigma, sigma))
+        scores = maps.reshape(len(maps), -1).max(axis=1)
+        return maps, scores

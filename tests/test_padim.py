@@ -95,3 +95,21 @@ def test_mahalanobis_rejects_other_input_size():
     model = PaDiM(d=8, device="cpu", weights=None).fit([(torch.randn(4, 3, 32, 32), None, None)])
     with pytest.raises(ValueError):
         model.mahalanobis(torch.randn(1, 3, 64, 64))
+
+
+def test_predict_shapes_and_score_is_map_max():
+    model = PaDiM(d=8, device="cpu", weights=None).fit([(torch.randn(10, 3, 32, 32), None, None)])
+    maps, scores = model.predict(torch.randn(3, 3, 32, 32), sigma=1.0)
+    assert maps.shape == (3, 32, 32) and scores.shape == (3,)
+    assert np.allclose(scores, maps.reshape(3, -1).max(axis=1))
+
+
+def test_upsampling_and_blur_never_exceed_the_patch_maximum():
+    # bilinear values and Gaussian-blurred values are weighted averages (weights >= 0,
+    # summing to 1) of existing values, so they can never exceed the largest patch distance
+    model = PaDiM(d=8, device="cpu", weights=None).fit([(torch.randn(10, 3, 32, 32), None, None)])
+    test = torch.randn(2, 3, 32, 32)
+    grid_max = model.mahalanobis(test).flatten(1).max(dim=1).values.numpy()
+    for sigma in (0, 2.0):
+        _, scores = model.predict(test, sigma=sigma)
+        assert np.all(scores <= grid_max + 1e-5)
