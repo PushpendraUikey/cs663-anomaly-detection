@@ -111,3 +111,40 @@ Fit 3-5 s per category (CPU), inference ~1 ms per image.
   can never exceed the largest patch distance (tested).
 - Good qualitative figure for slides: input | ground truth | 56 grid | final map (regenerate in the
   viz step).
+
+### Paper reference values (Defard et al., arXiv 2011.08785, read from the PDF)
+- Setup (Sec. IV): resize 256 -> centre crop 224; maps resized with **bicubic** interpolation (we use
+  bilinear, per our plan); Gaussian sigma = 4; eps = 0.01; R18 uses Rd100 (100 random dims of 448).
+- Table III, PaDiM-R18-Rd100 pixel AUROC (%): carpet 98.9, grid 94.9, leather 99.1, bottle 98.1,
+  hazelnut 97.7 (mean of these 5: 97.7). All classes 96.7; textures 95.6; objects 97.3.
+- Image-level AUROC: Table V reports only WR50-Rd550 (95.3 all classes) and EfficientNet-B5, **not R18**.
+  So there is no paper image-AUROC reference for our backbone; say so on the slide.
+- Useful for ablations: Table I (layer study, R18, all classes pixel AUROC): layer1 94.8, layer2 95.7,
+  layer3 95.7, layer1+2+3 summed 96.0, PaDiM-R18 (concatenated, joint Gaussian) 97.1.
+  Table II (R18, all classes): Rd100 96.7, PCA100 93.5, Rd200 97.0, PCA200 95.7, all 448 97.1
+  (random beats PCA reduction).
+- Table VII: inference 0.23 s/image for R18-Rd100 on an i7-4710HQ CPU.
+
+### 4c-iii: first PaDiM results (`scripts/run_padim.py` -> `results/padim.csv`)
+Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 224, sigma = 4, CPU.
+
+| category | PCA k=50 image | PaDiM image | PCA k=50 pixel | PaDiM pixel | paper R18 pixel |
+|---|---|---|---|---|---|
+| carpet | 0.632 | **0.973** | 0.815 | **0.984** | 0.989 |
+| grid | 0.782 | **0.924** | 0.763 | **0.924** | 0.949 |
+| leather | 0.960 | **0.996** | 0.990 | **0.992** | 0.991 |
+| bottle | 0.978 | **0.996** | 0.949 | **0.981** | 0.981 |
+| hazelnut | **0.923** | 0.809 | 0.980 | 0.975 | 0.977 |
+| **mean** | 0.855 | **0.940** | 0.899 | **0.971** | 0.977 |
+
+- Pixel AUROC is within 0.5 pp of the paper on 4/5 categories; grid is 2.5 pp below. Mean 97.1 vs 97.7.
+  Possible causes (not yet tested): bilinear vs the paper's bicubic map resizing, OpenCV INTER_AREA
+  vs PIL resizing, which 100 random channels were drawn (seed).
+- Biggest gain over PCA is on textures (carpet +34 pp image AUROC): local deep features capture
+  texture statistics that pixel-space PCA cannot.
+- **Open issue: hazelnut image AUROC 0.809, below PCA (0.923)**, although its pixel AUROC is fine
+  (0.975). Localization works but the max-of-map image score separates good/defective images poorly.
+  To be analysed (which good images score high, and why).
+- Timing: fit 13-28 s per category, ~50-65 ms per test image on CPU (paper: 0.23 s/image on an older
+  CPU). Caveat for the comparison slide: PCA runs at 128 px without crop, PaDiM at 224 after a
+  256 -> 224 centre crop, so pixel AUROCs are computed on slightly different regions/resolutions.

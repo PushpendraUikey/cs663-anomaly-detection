@@ -1,0 +1,6 @@
+category,image_auroc,pixel_auroc,fit_s,ms_per_image,n_train,n_test,layers,d,eps,sigma,size,crop,seed,device
+carpet,0.9731,0.9842,19.06,67.1,280,117,layer1+layer2+layer3,100,0.01,4.0,256,224,0,cpu
+grid,0.924,0.9243,14.68,51.8,264,78,layer1+layer2+layer3,100,0.01,4.0,256,224,0,cpu
+leather,0.9963,0.9915,17.07,62.5,245,124,layer1+layer2+layer3,100,0.01,4.0,256,224,0,cpu
+bottle,0.996,0.9805,12.52,53.7,209,83,layer1+layer2+layer3,100,0.01,4.0,256,224,0,cpu
+hazelnut,0.8086,0.9752,27.74,62.9,391,110,layer1+layer2+layer3,100,0.01,4.0,256,224,0,cpu
