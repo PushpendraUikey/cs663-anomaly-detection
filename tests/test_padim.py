@@ -72,3 +72,26 @@ def test_fit_shapes_and_positive_definite():
 def test_d_out_of_range_raises():
     with pytest.raises(ValueError):
         PaDiM(d=449, device="cpu", weights=None)
+
+
+def test_mahalanobis_matches_direct_formula():
+    torch.manual_seed(0)
+    model = PaDiM(d=8, device="cpu", weights=None).fit([(torch.randn(20, 3, 32, 32), None, None)])
+    assert torch.allclose(model.precision @ model.cov, torch.eye(8).expand(64, 8, 8), atol=1e-4)
+
+    test = torch.randn(2, 3, 32, 32)
+    dist = model.mahalanobis(test)
+    assert dist.shape == (2, 8, 8)
+
+    e = model.embed(test).double()                          # (2, 8, 8, 8): B, d, H, W
+    for b, (i, j) in [(0, (0, 0)), (1, (3, 5)), (1, (7, 7))]:
+        p = i * 8 + j                                       # row-major position index
+        diff = e[b, :, i, j] - model.mean[p].double()
+        expected = torch.sqrt(diff @ torch.linalg.inv(model.cov[p].double()) @ diff)
+        assert dist[b, i, j].item() == pytest.approx(expected.item(), rel=1e-4)
+
+
+def test_mahalanobis_rejects_other_input_size():
+    model = PaDiM(d=8, device="cpu", weights=None).fit([(torch.randn(4, 3, 32, 32), None, None)])
+    with pytest.raises(ValueError):
+        model.mahalanobis(torch.randn(1, 3, 64, 64))

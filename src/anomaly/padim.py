@@ -112,4 +112,21 @@ class PaDiM:
             raise ValueError("need at least 2 training images to estimate a covariance")
         self.grid = (h, w)
         self.mean, self.cov = gaussian_from_sums(n, s1, s2, self.eps)
+        # invert once here, not for every test image; float64 for accuracy at small eps
+        self.precision = torch.linalg.inv(self.cov.double()).float()  # (P, d, d)
         return self
+
+    def mahalanobis(self, images):
+        """Patch-level Mahalanobis distance, (B, H/4, W/4).
+
+        M(x_p) = sqrt( (x_p - mu_p)^T  Sigma_p^{-1}  (x_p - mu_p) ) at every position p.
+        """
+        e = self.embed(images)                                  # (B, d, H, W)
+        b, d, h, w = e.shape
+        if (h, w) != self.grid:
+            raise ValueError(f"test grid {(h, w)} differs from training grid {self.grid}")
+        diff = e.reshape(b, d, h * w).permute(2, 0, 1) - self.mean[:, None, :]   # (P, B, d)
+        # quadratic form for all P x B vectors at once: row (diff^T Sigma^-1), times diff, summed
+        m2 = ((diff @ self.precision) * diff).sum(dim=-1)       # (P, B)
+        # m2 >= 0 in exact arithmetic; clamp tiny negative round-off before the square root
+        return m2.clamp_min(0).sqrt().T.reshape(b, h, w)

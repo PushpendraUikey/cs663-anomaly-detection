@@ -83,3 +83,18 @@ Fit 3-5 s per category (CPU), inference ~1 ms per image.
 - Consequence for scoring: if a test patch activates a channel that was always 0 in training, it
   adds x^2/eps to the squared Mahalanobis distance, so eps sets how strongly "never seen before"
   is penalised. This is what the eps sweep (1e-3 to 1) measures.
+
+### 4c-i: Mahalanobis distance (`PaDiM.mahalanobis`)
+- Precision matrices Sigma_p^{-1} computed once at fit time (float64 inversion), 3136 x 100 x 100.
+- M(x_p) = sqrt((x_p - mu_p)^T Sigma_p^{-1} (x_p - mu_p)): distance from the normal mean measured in
+  units of the normal spread along each direction (a Euclidean distance after whitening).
+- Carpet sanity check (no smoothing yet): good images max ~10.5, mean ~5.4; first "color" defect
+  image max 16.0, mean inside the defect 11.6 vs 5.7 outside. Defect patches are about 2x farther
+  than normal patches. Note the overlap: max of a good image (10.5) is close to max of weaker
+  defects (11.5-11.8), which is where AUROC will lose points.
+- Why a normal patch has M ~ 5, not sqrt(d) = 10: without eps, M^2 of a sample from the fitted Gaussian
+  averages d = 100 (chi-square with d degrees of freedom). With eps, each eigen-direction contributes
+  lambda_i / (lambda_i + eps) instead of 1, i.e. eps "switches off" directions with variance below eps.
+  On carpet 79 of the 100 eigenvalues are below eps = 0.01; sum lambda/(lambda+eps) has median 25.5,
+  sqrt = 5.05, matching the observed ~5.4 on good test images. So eps also sets the effective
+  dimension of the model (link to the eps sweep).
