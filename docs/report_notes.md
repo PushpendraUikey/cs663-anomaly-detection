@@ -176,3 +176,18 @@ Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 22
   with k components; the conv AE is a non-linear generalisation with shared local filters.
 - Input is [0, 1] RGB at 128 x 128 (`MVTecDataset(size=128, normalize=False)`), same as PCA.
 - Latent size 100 is our default (configurable); not tuned.
+
+### 5b: SSIM loss (`ssim_map`, `ssim_loss` in `src/anomaly/ae.py`)
+- Our own implementation (Wang et al. 2004 formula): local means, variances and covariance from an
+  11 x 11 box filter (`avg_pool2d`, stride 1, mirror padding so the map stays H x W), constants
+  c1 = 0.01^2, c2 = 0.03^2 for intensity range 1. Computed per colour channel, then averaged.
+  Loss = 1 - mean SSIM. The same map gives the anomaly map later (1 - SSIM per pixel).
+- Window 11 as in Bergmann et al. 2019. Difference: they train on grayscale for textures; we keep
+  RGB and average the channels.
+- Verified against `skimage.metrics.structural_similarity` (win 11, population covariance): max
+  difference < 1e-4 away from the border (border differs only by padding convention).
+- Demonstration for the slide (test): a +0.1 brightness shift and Gaussian noise of sigma 0.1 have
+  the same MSE (0.010) but SSIM 0.983 vs 0.855. L2 cannot tell "same pattern, brighter" from
+  "pattern destroyed"; SSIM can. This is why SSIM suits texture defects.
+- Link to course: the structure term cov / (sigma_x sigma_y) is the local correlation coefficient,
+  the same quantity as ZNCC used in the alignment step.

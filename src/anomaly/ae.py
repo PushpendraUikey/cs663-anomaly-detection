@@ -3,6 +3,7 @@
 Trained on defect-free images only; a defect cannot pass through the small
 latent code, so it is reconstructed as "normal" and shows up in |x - x_hat|.
 """
+import torch.nn.functional as F
 from torch import nn
 
 SIZE = 128   # the 8 x 8 bottleneck kernel below assumes 128 x 128 inputs
@@ -51,3 +52,38 @@ class AutoEncoder(nn.Module):
         if x.shape[-2:] != (SIZE, SIZE):
             raise ValueError(f"expected {SIZE} x {SIZE} input, got {tuple(x.shape[-2:])}")
         return self.decoder(self.encoder(x))
+
+
+def ssim_map(x, y, window=11, c1=0.01 ** 2, c2=0.03 ** 2):
+    """Local structural similarity of two image batches in [0, 1].
+
+    x, y: (B, C, H, W).  Returns (B, H, W) with values in [-1, 1]; 1 = identical window.
+
+    Around every pixel, a window x window box gives local means, variances and the
+    covariance.  SSIM = luminance term * contrast-and-structure term:
+
+        (2 mu_x mu_y + c1) (2 cov_xy + c2)
+        ------------------------------------------------
+        (mu_x^2 + mu_y^2 + c1) (var_x + var_y + c2)
+
+    c1, c2 are the standard constants (0.01 * L)^2, (0.03 * L)^2 for range L = 1;
+    they keep the ratio stable where a window is dark or flat.
+    """
+    pad = window // 2
+
+    def local_mean(t):
+        # box filter: mirror-pad so the output keeps the H x W size, then average
+        return F.avg_pool2d(F.pad(t, (pad, pad, pad, pad), mode="reflect"), window, stride=1)
+
+    mu_x, mu_y = local_mean(x), local_mean(y)
+    # var = E[x^2] - E[x]^2 and cov = E[xy] - E[x]E[y], with E = the local box mean
+    var_x = local_mean(x * x) - mu_x ** 2
+    var_y = local_mean(y * y) - mu_y ** 2
+    cov = local_mean(x * y) - mu_x * mu_y
+    ssim = ((2 * mu_x * mu_y + c1) * (2 * cov + c2)) / ((mu_x ** 2 + mu_y ** 2 + c1) * (var_x + var_y + c2))
+    return ssim.mean(dim=1)              # average the colour channels
+
+
+def ssim_loss(x, y, window=11):
+    """1 - mean SSIM: 0 for identical images, larger = less similar."""
+    return 1 - ssim_map(x, y, window).mean()
