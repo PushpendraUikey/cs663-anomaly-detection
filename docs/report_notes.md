@@ -161,3 +161,18 @@ Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 22
 - Timing: fit 13-28 s per category, ~50-65 ms per test image on CPU (paper: 0.23 s/image on an older
   CPU). Caveat for the comparison slide: PCA runs at 128 px without crop, PaDiM at 224 after a
   256 -> 224 centre crop, so pixel AUROCs are computed on slightly different regions/resolutions.
+
+## Convolutional autoencoder (Step 5)
+### 5a: architecture (`src/anomaly/ae.py`, `AutoEncoder`)
+- Layout follows Bergmann et al. 2019 (Table 1): encoder of 4x4 stride-2 convs (each halves the
+  side) interleaved with 3x3 stride-1 convs, 128 -> 64 -> 32 -> 16 -> 8, then an 8x8 conv with no
+  padding collapses the 8x8x32 map to a 1x1x100 latent code. Decoder mirrors it with 4x4 stride-2
+  transposed convs (each doubles the side). LeakyReLU(0.2) everywhere, linear latent, sigmoid output
+  so the reconstruction is in [0, 1] like the input (needed for SSIM later).
+- 1.05 M parameters. Compression: 49,152 input numbers -> 100 (about 490x). The bottleneck is the
+  whole point: it forces the network to keep only what is common to normal images, so a defect is
+  reconstructed as normal and appears in the residual.
+- Link to PCA: a linear autoencoder with a k-dim code and L2 loss learns the same subspace as PCA
+  with k components; the conv AE is a non-linear generalisation with shared local filters.
+- Input is [0, 1] RGB at 128 x 128 (`MVTecDataset(size=128, normalize=False)`), same as PCA.
+- Latent size 100 is our default (configurable); not tuned.
