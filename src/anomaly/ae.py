@@ -3,6 +3,9 @@
 Trained on defect-free images only; a defect cannot pass through the small
 latent code, so it is reconstructed as "normal" and shows up in |x - x_hat|.
 """
+import copy
+
+import torch
 import torch.nn.functional as F
 from torch import nn
 
@@ -87,3 +90,58 @@ def ssim_map(x, y, window=11, c1=0.01 ** 2, c2=0.03 ** 2):
 def ssim_loss(x, y, window=11):
     """1 - mean SSIM: 0 for identical images, larger = less similar."""
     return 1 - ssim_map(x, y, window).mean()
+
+
+def split_train_val(n, val_fraction=0.1, seed=0):
+    """Random, seeded split of indices 0..n-1 into (train, val); at least 1 in val."""
+    perm = torch.randperm(n, generator=torch.Generator().manual_seed(seed))
+    n_val = max(1, round(val_fraction * n))
+    return perm[n_val:], perm[:n_val]
+
+
+def train_autoencoder(model, images, loss="l2", epochs=200, batch_size=32, lr=2e-4,
+                      val_fraction=0.1, patience=20, seed=0, device=None, log=None):
+    """Train on defect-free images with early stopping; returns the per-epoch history.
+
+    images: (N, 3, 128, 128) float tensor in [0, 1].
+    loss:   "l2" (mean squared error) or "ssim" (1 - mean SSIM).
+    Stops when the validation loss has not improved for `patience` epochs, and
+    puts the weights of the best epoch back into the model.
+    """
+    loss_fn = {"l2": F.mse_loss, "ssim": lambda out, x: ssim_loss(x, out)}[loss]
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    train_idx, val_idx = split_train_val(len(images), val_fraction, seed)
+    val = images[val_idx].to(device)
+    g = torch.Generator().manual_seed(seed)                 # fixes the batch order
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+
+    history, best_val, best_state, bad_epochs = [], float("inf"), None, 0
+    for epoch in range(1, epochs + 1):
+        model.train()
+        order = train_idx[torch.randperm(len(train_idx), generator=g)]   # reshuffle every epoch
+        total = 0.0
+        for i in range(0, len(order), batch_size):
+            x = images[order[i:i + batch_size]].to(device)
+            batch_loss = loss_fn(model(x), x)               # target = the input itself
+            opt.zero_grad()                                 # clear gradients of the last step
+            batch_loss.backward()                           # d loss / d every weight
+            opt.step()                                      # move the weights downhill
+            total += batch_loss.item() * len(x)
+        model.eval()
+        with torch.no_grad():                               # validation: measure only, never learn
+            val_loss = loss_fn(model(val), val).item()
+        history.append({"epoch": epoch, "train_loss": total / len(order), "val_loss": val_loss})
+        if log:
+            log(history[-1])
+
+        if val_loss < best_val:
+            best_val, bad_epochs = val_loss, 0
+            best_state = copy.deepcopy(model.state_dict())  # snapshot of the best weights
+        else:
+            bad_epochs += 1
+            if bad_epochs >= patience:
+                break
+    model.load_state_dict(best_state)
+    model.eval()
+    return history

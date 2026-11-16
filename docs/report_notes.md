@@ -191,3 +191,15 @@ Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 22
   "pattern destroyed"; SSIM can. This is why SSIM suits texture defects.
 - Link to course: the structure term cov / (sigma_x sigma_y) is the local correlation coefficient,
   the same quantity as ZNCC used in the alignment step.
+
+### 5c: training loop (`train_autoencoder`, `split_train_val` in `src/anomaly/ae.py`)
+- Adam, lr 2e-4 (Bergmann et al. 2019), batch 32, up to 200 epochs, loss "l2" (MSE) or "ssim".
+- Early stopping: 10% of the good training images are held out (seeded random split). After each
+  epoch the loss on them is measured without learning; training stops when it has not improved for
+  20 epochs (patience), and the weights of the best epoch are restored. No test images and no
+  defective images are involved, so the stopping rule does not leak test information.
+- No data augmentation (Bergmann trains on 10k random crops per texture; we use the 209-391 full
+  images). Expect weaker AE results than their paper; state this on the slide.
+- First real run (bottle, L2, CPU): loss 0.133 -> 0.0024 in 150 epochs, still improving slowly;
+  228 s for 150 epochs (1.3 s/epoch L2, 2.1 s/epoch SSIM). Training is feasible on the laptop CPU,
+  so Colab is optional.

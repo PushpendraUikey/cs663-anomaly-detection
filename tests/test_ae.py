@@ -1,10 +1,12 @@
+import copy
+
 import numpy as np
 import pytest
 import torch
 
 from skimage.metrics import structural_similarity
 
-from anomaly.ae import AutoEncoder, ssim_loss, ssim_map
+from anomaly.ae import AutoEncoder, split_train_val, ssim_loss, ssim_map, train_autoencoder
 
 
 def test_shapes_through_the_bottleneck():
@@ -66,3 +68,41 @@ def test_ssim_loss_is_differentiable():
     y = torch.rand(1, 3, 32, 32, requires_grad=True)
     ssim_loss(x, y).backward()
     assert y.grad is not None and y.grad.abs().sum() > 0
+
+
+# ---- training ----
+
+def _stripe_images(n=24):
+    # one fixed stripe pattern with a random contrast per image: easy to learn,
+    # and it has structure, so the SSIM loss has something to match
+    torch.manual_seed(0)
+    stripes = torch.sin(torch.arange(128) * 0.2).view(1, 1, 128, 1).expand(1, 3, 128, 128)
+    return 0.5 + (0.2 + 0.2 * torch.rand(n, 1, 1, 1)) * stripes
+
+
+def test_split_is_disjoint_complete_and_seeded():
+    train, val = split_train_val(50, 0.1, seed=0)
+    assert len(val) == 5 and len(train) == 45
+    assert sorted(torch.cat([train, val]).tolist()) == list(range(50))
+    assert torch.equal(val, split_train_val(50, 0.1, seed=0)[1])
+
+
+@pytest.mark.parametrize("loss", ["l2", "ssim"])
+def test_training_lowers_validation_loss(loss):
+    torch.manual_seed(0)
+    model = AutoEncoder(latent_dim=8)
+    history = train_autoencoder(model, _stripe_images(), loss=loss, epochs=10, batch_size=8,
+                                lr=2e-3, device="cpu")
+    assert history[-1]["val_loss"] < history[0]["val_loss"]
+    assert not model.training                              # returned in eval mode
+
+
+def test_early_stopping_stops_and_restores_best_weights():
+    torch.manual_seed(0)
+    model = AutoEncoder(latent_dim=8)
+    before = copy.deepcopy(model.state_dict())
+    # lr = 0: weights never change, so the validation loss never improves after epoch 1
+    history = train_autoencoder(model, _stripe_images(), epochs=50, batch_size=8, lr=0.0,
+                                patience=3, device="cpu")
+    assert len(history) == 4                               # epoch 1 is best, then 3 bad epochs
+    assert all(torch.equal(before[k], v) for k, v in model.state_dict().items())
