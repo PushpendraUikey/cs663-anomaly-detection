@@ -113,3 +113,23 @@ def test_upsampling_and_blur_never_exceed_the_patch_maximum():
     for sigma in (0, 2.0):
         _, scores = model.predict(test, sigma=sigma)
         assert np.all(scores <= grid_max + 1e-5)
+
+
+def test_euclidean_matches_direct_formula_and_is_used_by_predict():
+    torch.manual_seed(0)
+    model = PaDiM(d=8, device="cpu", weights=None, distance="euclidean")
+    model.fit([(torch.randn(20, 3, 32, 32), None, None)])
+    test = torch.randn(2, 3, 32, 32)
+    dist = model.euclidean(test)
+    e = model.embed(test)
+    expected = torch.linalg.norm(e[1, :, 3, 5] - model.mean[3 * 8 + 5])
+    assert dist[1, 3, 5].item() == pytest.approx(expected.item(), rel=1e-5)
+    # predict with sigma = 0 is just the upsampled grid, so its max is bounded by the grid max
+    _, scores = model.predict(test, sigma=0)
+    assert np.all(scores <= dist.flatten(1).max(dim=1).values.numpy() + 1e-5)
+    assert not torch.allclose(dist, model.mahalanobis(test))   # really a different distance
+
+
+def test_unknown_distance_raises():
+    with pytest.raises(ValueError):
+        PaDiM(d=8, device="cpu", weights=None, distance="cosine")

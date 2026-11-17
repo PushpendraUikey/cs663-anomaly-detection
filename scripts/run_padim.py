@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))  # make `import anomaly` work without inst
 
 from anomaly.data import MVTecDataset  # noqa: E402
 from anomaly.metrics import image_auroc, pixel_auroc  # noqa: E402
-from anomaly.padim import LAYERS, PaDiM  # noqa: E402
+from anomaly.padim import DISTANCES, LAYERS, PaDiM  # noqa: E402
 
 
 def parse_args():
@@ -29,6 +29,8 @@ def parse_args():
     p.add_argument("--layers", nargs="+", default=list(LAYERS), choices=LAYERS)
     p.add_argument("--d", type=int, default=100, help="number of random channels kept")
     p.add_argument("--eps", type=float, default=0.01, help="covariance regulariser eps * I")
+    p.add_argument("--distance", default="mahalanobis", choices=DISTANCES,
+                   help="patch distance; euclidean ignores the covariance (ablation)")
     p.add_argument("--sigma", type=float, default=4.0, help="Gaussian blur of the map, in pixels")
     p.add_argument("--size", type=int, default=256, help="resize side before cropping")
     p.add_argument("--crop", type=int, default=224, help="centre crop side (paper setting)")
@@ -56,7 +58,7 @@ def run_category(cat, args):
     train = DataLoader(MVTecDataset(cat, "train", **data), batch_size=args.batch_size)
     test = DataLoader(MVTecDataset(cat, "test", **data), batch_size=args.batch_size)  # no shuffle
 
-    model = PaDiM(layers=args.layers, d=args.d, eps=args.eps, seed=args.seed)
+    model = PaDiM(layers=args.layers, d=args.d, eps=args.eps, seed=args.seed, distance=args.distance)
     t0 = time.perf_counter()
     model.fit(train)
     t1 = time.perf_counter()
@@ -69,7 +71,7 @@ def run_category(cat, args):
         "fit_s": round(t1 - t0, 2),
         "ms_per_image": round(1000 * (t2 - t1) / len(labels), 1),
         "n_train": len(train.dataset), "n_test": len(labels),
-        "layers": "+".join(args.layers), "d": args.d, "eps": args.eps, "sigma": args.sigma,
+        "layers": "+".join(args.layers), "d": args.d, "distance": args.distance, "eps": args.eps, "sigma": args.sigma,
         "size": args.size, "crop": args.crop, "seed": args.seed, "device": model.device,
     }
 

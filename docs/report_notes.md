@@ -248,3 +248,26 @@ improving and their numbers are a lower bound for this architecture.
   a whole 128 px image, and five of ten runs cut off by the 200-epoch limit.
 - Cost: the autoencoder is the slowest to fit by far (minutes vs seconds) for the weakest results;
   PaDiM needs no training at all, only one pass through a frozen network.
+
+## Ablations (Step 6)
+### 6a: Euclidean vs Mahalanobis (`--distance euclidean` -> `results/padim_euclidean.csv`)
+Same features, same 100 channels, same per-position mean; only the distance changes
+(Euclidean = Mahalanobis with Sigma replaced by I).
+
+| category | Euclid image | Mahal image | Euclid pixel | Mahal pixel |
+|---|---|---|---|---|
+| carpet | 0.852 | **0.973** | 0.956 | **0.984** |
+| grid | 0.583 | **0.924** | 0.607 | **0.924** |
+| leather | 0.928 | **0.996** | 0.975 | **0.992** |
+| bottle | 0.984 | **0.996** | 0.963 | **0.981** |
+| hazelnut | **0.880** | 0.809 | 0.961 | **0.975** |
+| **mean** | 0.845 | **0.940** | 0.893 | **0.971** |
+
+- The covariance is worth +9.5 pp image and +7.8 pp pixel AUROC on average. Largest effect on grid
+  (image 0.58 -> 0.92): Euclidean distance is dominated by the high-variance channels, so a defect
+  that shows up in low-variance channels is drowned out; Mahalanobis rescales every direction by
+  its normal spread (whitening).
+- Exception: hazelnut image AUROC is higher with Euclidean (0.880 vs 0.809), while its pixel AUROC
+  is lower. Consistent with the hazelnut analysis: the dust specks that cause false alarms are
+  rare-direction deviations that Mahalanobis amplifies (not verified directly).
+- Same cost: fit and inference times are unchanged.

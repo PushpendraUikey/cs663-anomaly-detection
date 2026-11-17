@@ -12,6 +12,7 @@ from torchvision.models import ResNet18_Weights, resnet18
 
 LAYERS = ("layer1", "layer2", "layer3")
 LAYER_CHANNELS = {"layer1": 64, "layer2": 128, "layer3": 256}
+DISTANCES = ("mahalanobis", "euclidean")
 
 
 class FeatureExtractor(nn.Module):
@@ -84,7 +85,10 @@ def gaussian_from_sums(n, s1, s2, eps):
 
 class PaDiM:
     def __init__(self, layers=LAYERS, d=100, eps=0.01, seed=0, device=None,
-                 weights=ResNet18_Weights.IMAGENET1K_V1):
+                 weights=ResNet18_Weights.IMAGENET1K_V1, distance="mahalanobis"):
+        if distance not in DISTANCES:
+            raise ValueError(f"distance must be one of {DISTANCES}, got {distance!r}")
+        self.distance = distance
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.extractor = FeatureExtractor(layers, weights).to(self.device)
         n_channels = self.extractor.out_channels
@@ -118,27 +122,40 @@ class PaDiM:
         self.precision = torch.linalg.inv(self.cov.double()).float()  # (P, d, d)
         return self
 
+    def _diff(self, images):
+        """x_p - mu_p for every position and image: (P, B, d), plus the output shape (B, H/4, W/4)."""
+        e = self.embed(images)                                  # (B, d, H, W)
+        b, d, h, w = e.shape
+        if (h, w) != self.grid:
+            raise ValueError(f"test grid {(h, w)} differs from training grid {self.grid}")
+        return e.reshape(b, d, h * w).permute(2, 0, 1) - self.mean[:, None, :], (b, h, w)
+
     def mahalanobis(self, images):
         """Patch-level Mahalanobis distance, (B, H/4, W/4).
 
         M(x_p) = sqrt( (x_p - mu_p)^T  Sigma_p^{-1}  (x_p - mu_p) ) at every position p.
         """
-        e = self.embed(images)                                  # (B, d, H, W)
-        b, d, h, w = e.shape
-        if (h, w) != self.grid:
-            raise ValueError(f"test grid {(h, w)} differs from training grid {self.grid}")
-        diff = e.reshape(b, d, h * w).permute(2, 0, 1) - self.mean[:, None, :]   # (P, B, d)
+        diff, shape = self._diff(images)                        # (P, B, d)
         # quadratic form for all P x B vectors at once: row (diff^T Sigma^-1), times diff, summed
         m2 = ((diff @ self.precision) * diff).sum(dim=-1)       # (P, B)
         # m2 >= 0 in exact arithmetic; clamp tiny negative round-off before the square root
-        return m2.clamp_min(0).sqrt().T.reshape(b, h, w)
+        return m2.clamp_min(0).sqrt().T.reshape(shape)
+
+    def euclidean(self, images):
+        """Patch-level Euclidean distance to the position mean, (B, H/4, W/4).
+
+        E(x_p) = sqrt( (x_p - mu_p)^T (x_p - mu_p) ): Mahalanobis with Sigma_p replaced by I,
+        so every channel counts equally and correlations are ignored. Ablation only.
+        """
+        diff, shape = self._diff(images)
+        return (diff * diff).sum(dim=-1).sqrt().T.reshape(shape)
 
     def predict(self, images, sigma=4.0):
         """Anomaly maps (B, H, W) at input resolution and image scores (B,), as numpy.
 
         Same output contract as PCAModel.predict, so scripts can treat methods alike.
         """
-        dist = self.mahalanobis(images)                          # (B, H/4, W/4)
+        dist = getattr(self, self.distance)(images)              # (B, H/4, W/4)
         maps = F.interpolate(dist[:, None], size=images.shape[-2:],
                              mode="bilinear", align_corners=False)[:, 0].numpy()   # (B, H, W)
         if sigma > 0:
