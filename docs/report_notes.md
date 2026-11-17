@@ -215,3 +215,36 @@ Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 22
   10-12 ms per image on CPU.
 - Observation: on the same reconstruction, the SSIM map beats the squared-error map by 11 pp image
   AUROC. Final numbers come from `scripts/run_ae.py`.
+
+### 5e: autoencoder results (`scripts/run_ae.py` -> `results/ae.csv`)
+Settings: 128 px, latent 100, Adam lr 2e-4, batch 32, up to 200 epochs, patience 20, seed 0, sigma 2,
+CPU. AE-L2 scored with the squared-residual map, AE-SSIM with the 1 - SSIM map.
+
+| category | AE-L2 image | AE-SSIM image | AE-L2 pixel | AE-SSIM pixel | epochs L2 / SSIM |
+|---|---|---|---|---|---|
+| carpet | 0.544 | 0.571 | 0.635 | 0.785 | 200* / 101 |
+| grid | 0.697 | 0.582 | 0.662 | 0.620 | 125 / 137 |
+| leather | 0.888 | 0.961 | 0.975 | 0.987 | 200* / 200* |
+| bottle | 0.852 | 0.968 | 0.799 | 0.946 | 165 / 200* |
+| hazelnut | 0.945 | 0.880 | 0.976 | 0.977 | 200* / 174 |
+| **mean** | 0.785 | 0.792 | 0.809 | 0.863 | |
+
+\* reached the 200-epoch limit; early stopping had not triggered, so these models were still
+improving and their numbers are a lower bound for this architecture.
+
+### Method comparison (main table for the slides; means over the five categories)
+| method | image AUROC | pixel AUROC | fit time per category | per test image |
+|---|---|---|---|---|
+| PCA, k = 50 (128 px) | 0.855 | 0.899 | 3-5 s | ~1 ms |
+| AE-L2 (128 px) | 0.785 | 0.809 | 220-490 s | ~3 ms |
+| AE-SSIM (128 px) | 0.792 | 0.863 | 390-930 s | ~7 ms |
+| PaDiM R18 (224 px) | 0.940 | 0.971 | 13-28 s | 50-65 ms |
+
+- SSIM helps pixel AUROC (+5.4 pp mean), most on carpet (+15 pp) and bottle (+15 pp); image AUROC
+  is about equal on average (SSIM better on leather and bottle, worse on grid and hazelnut).
+- Both autoencoders are below the PCA baseline on average, and fail on carpet and grid (image
+  AUROC 0.54-0.70), the same textures where PCA fails. Likely reasons, not tested: only 209-391
+  training images with no augmentation (Bergmann uses 10k crops per texture), a 100-number code for
+  a whole 128 px image, and five of ten runs cut off by the 200-epoch limit.
+- Cost: the autoencoder is the slowest to fit by far (minutes vs seconds) for the weakest results;
+  PaDiM needs no training at all, only one pass through a frozen network.
