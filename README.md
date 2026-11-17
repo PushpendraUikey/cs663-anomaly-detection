@@ -13,8 +13,7 @@ one per pixel (localization). Methods, all core code written by us:
 - **Extension: misalignment robustness** (`src/anomaly/align.py`): ZNCC rotation and shift search
   over a Gaussian pyramid, then bilinear warping, compared against rotation augmentation.
 
-The slides are in `docs/slides.pdf`, and the detailed results and discussion in
-`docs/report_notes.md`.
+The slides (results, ablations and discussion) are in `docs/slides.pdf`.
 
 ## Main results (means over carpet, grid, leather, bottle, hazelnut)
 
@@ -66,7 +65,7 @@ src/anomaly/   data.py, metrics.py, pca.py, ae.py, padim.py, align.py, viz.py
 scripts/       one script per experiment (argparse flags; see each docstring)
 tests/         unit and sanity tests for every module
 results/       CSVs and figures
-docs/          proposal, report notes, slides
+docs/          slides
 ```
 
 ## References
