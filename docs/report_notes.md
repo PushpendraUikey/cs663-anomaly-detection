@@ -354,3 +354,17 @@ Seeded random subsets of train/good (`data.train_subset`); test set unchanged. d
 - Hazelnut image AUROC falls as data grows (0.856 at 10 % -> 0.809 at 100 %): more data gives tighter
   covariances, which make the dust-speck false alarms stronger (same pattern as small eps).
 - Practical message: PaDiM is data-efficient; a few dozen good images are enough for most categories.
+
+## Misalignment extension (Step 7)
+### 7a: ZNCC and template matching (`src/anomaly/align.py`: `zncc`, `match_shift`)
+- ZNCC(a, b) = sum((a - mean a)(b - mean b)) / sqrt(sum (a - mean a)^2 sum (b - mean b)^2): the
+  correlation coefficient of the pixel values, in [-1, 1]. Invariant to brightness offset and
+  contrast gain (zncc(a, 2a + 3) = 1), so lighting changes do not disturb the alignment.
+- Template matching: the centre of the reference (border = max_shift removed) is slid over the
+  test image to every integer offset in [-s, s]^2 and ZNCC is computed at each; the argmax is the
+  shift. Vectorised with `numpy.lib.stride_tricks.sliding_window_view` (a view, no copies).
+  Cost per call: (2s+1)^2 x template size, so it is used at coarse pyramid levels (7b).
+- Same quantity as the structure term of SSIM (cov / (sigma_x sigma_y)), computed over the whole
+  template instead of an 11 x 11 window.
+- Tests: identity / gain-offset / inverse give 1 / 1 / -1; known shifts up to (8, 8) recovered
+  exactly with score 1; a darker, lower-contrast shifted copy is still matched.
