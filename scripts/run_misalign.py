@@ -8,7 +8,7 @@ Conditions per category (3 PaDiM fits, 5 evaluations):
     misaligned+augment  train + one randomly rotated/shifted copy of each image, test misaligned
     original+align      train aligned,             test aligned (natural misalignment: screw, metal_nut)
 
-Writes results/misalign.csv and results/figures/misalign.png.
+Writes results/misalign.csv, results/figures/misalign.png and results/figures/misalign_examples.png.
     python scripts/run_misalign.py
     python scripts/run_misalign.py --categories bottle --max-angle 15
 """
@@ -47,6 +47,7 @@ def parse_args():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", type=Path, default=ROOT / "results" / "misalign.csv")
     p.add_argument("--fig", type=Path, default=ROOT / "results" / "figures" / "misalign.png")
+    p.add_argument("--examples-fig", type=Path, default=ROOT / "results" / "figures" / "misalign_examples.png")
     p.add_argument("--plot-only", action="store_true", help="redraw the figure from the existing CSV")
     return p.parse_args()
 
@@ -85,6 +86,33 @@ def make_reference(train_base, kind):
     if kind == "mean":
         return np.mean([train_base[i][0].numpy().mean(axis=0) for i in range(len(train_base))], axis=0)
     return train_base[0][0].numpy().mean(axis=0)                  # first training image
+
+
+def plot_examples(categories, args):
+    """One row per category: reference | test image | misaligned | misaligned + aligned.
+    The test image is the first defective one, fixed before looking at any result."""
+    from anomaly.viz import plt
+    fig, axes = plt.subplots(len(categories), 4, figsize=(8, 2 * len(categories)), squeeze=False)
+    for r, cat in enumerate(categories):
+        kw = dict(size=256, crop=224)
+        train_base, test_base = MVTecDataset(cat, "train", **kw), MVTecDataset(cat, "test", **kw)
+        ref = make_reference(train_base, REFERENCE.get(cat, "first"))
+        i = next(j for j, (_, label, _) in enumerate(test_base.samples) if label == 1)
+        img = test_base[i][0].permute(1, 2, 0).numpy()
+        angle, shift = random_misalignment(i, args.max_angle, args.max_shift, seed=args.seed)
+        moved = warp(img, angle, shift)
+        a, s, score = estimate_alignment(ref, moved.mean(axis=2), max_shift=args.search_shift)
+        panels = [(ref, "reference"), (img, "test"), (moved, f"misaligned ({angle:+.0f} deg)"),
+                  (warp(moved, a, s), f"aligned (ZNCC {score:.2f})")]
+        for ax, (im, title) in zip(axes[r], panels):
+            ax.imshow(np.clip(im, 0, 1), cmap="gray" if im.ndim == 2 else None)
+            ax.set_title(title, fontsize=8)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        axes[r, 0].set_ylabel(cat, fontsize=9)
+    fig.tight_layout()
+    fig.savefig(args.examples_fig, dpi=130, bbox_inches="tight")
+    plt.close(fig)
 
 
 def main():
@@ -151,7 +179,8 @@ def main():
               "misaligned+augment": "#eda100", "original+align": "#6250d6"}
     plot_grouped_bars(rows, "category", "condition", ["image_auroc", "pixel_auroc"], args.fig,
                       bar_order=list(colors), colors=colors)
-    print(f"wrote {args.out} and {args.fig}")
+    plot_examples(list(dict.fromkeys(r["category"] for r in rows)), args)
+    print(f"wrote {args.out}, {args.fig} and {args.examples_fig}")
 
 
 if __name__ == "__main__":

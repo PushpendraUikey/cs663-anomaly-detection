@@ -80,3 +80,39 @@ def plot_grouped_bars(rows, group, bar, metrics, path, bar_order=None, colors=No
     fig.tight_layout()
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_qualitative(inputs, truths, methods, path, row_labels=None):
+    """Grid: one row per test image; columns input | ground truth | then map and mask per method.
+
+    inputs:  (R, H, W, 3) RGB in [0, 1];  truths: (R, H, W) {0, 1}
+    methods: list of (name, maps (R, H, W), threshold). Each map is divided by its method's
+             threshold, so the colour scale means the same for every method: 1 = threshold
+             (white-yellow and above is flagged), 0 = no anomaly evidence.
+    """
+    n_rows, n_cols = len(inputs), 2 + 2 * len(methods)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(1.6 * n_cols, 1.6 * n_rows), squeeze=False)
+    for r in range(n_rows):
+        axes[r, 0].imshow(inputs[r])
+        axes[r, 1].imshow(truths[r], cmap="gray", vmin=0, vmax=1)
+        for j, (name, maps, thr) in enumerate(methods):
+            heat = axes[r, 2 + 2 * j].imshow(maps[r] / thr, cmap="inferno", vmin=0, vmax=2)
+            # predicted mask in red over the input, ground-truth outline in green
+            overlay = inputs[r].copy()
+            pred = maps[r] >= thr
+            overlay[pred] = 0.5 * overlay[pred] + 0.5 * np.array([1.0, 0.0, 0.0])
+            ax = axes[r, 3 + 2 * j]
+            ax.imshow(overlay)
+            ax.contour(truths[r], levels=[0.5], colors="#00e000", linewidths=0.8)
+    titles = ["input", "ground truth"] + [t for name, _, _ in methods for t in (f"{name} map", f"{name} mask")]
+    for ax, t in zip(axes[0], titles):
+        ax.set_title(t, fontsize=8)
+    for r, ax in enumerate(axes[:, 0]):
+        if row_labels:
+            ax.set_ylabel(row_labels[r], fontsize=8)
+    for ax in axes.ravel():
+        ax.set_xticks([])
+        ax.set_yticks([])
+    fig.colorbar(heat, ax=axes, shrink=0.6, pad=0.01, label="map / threshold")
+    fig.savefig(path, dpi=130, bbox_inches="tight")
+    plt.close(fig)

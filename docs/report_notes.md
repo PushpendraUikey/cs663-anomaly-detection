@@ -441,3 +441,43 @@ Talking points:
 - Hazelnut: alignment ZNCC only ~0.77 (every nut has a different shape), but it still helps.
 - Runtime: alignment ~75 ms per image on CPU (included in ms_per_image: ~90-115 vs ~50-75 ms).
   Peak RAM 2.1 GB (augmented training sets).
+
+## Threshold rule and qualitative grids (Step 8)
+### `scripts/run_qualitative.py` -> `results/threshold.csv`, `figures/qualitative_<category>.png`
+Threshold rule (no defective image used): every method holds out the same seeded 10 % of
+train/good (the autoencoder's early-stopping split, `split_train_val(n, 0.1, seed=0)`) and is fitted
+on the other 90 %. Threshold = the largest map value on the held-out good images
+(`metrics.threshold_from_good`); mask = map >= threshold. Pixel F1 at that threshold
+(`f1_at_threshold`) is compared with the oracle best F1 over all thresholds (`best_f1`, uses the
+test masks: an upper bound, never deployed). Examples fixed before seeing results: first test
+image of each defect type (up to 4) plus the first good test image.
+Grid columns: input | ground truth | map and mask per method (PCA, AE-L2, AE-SSIM, PaDiM); maps are
+divided by their threshold so the colour scale is shared (1 = threshold); mask in red over the
+input, ground truth outlined in green. PCA/AE maps (full 128 px image) are centre-cropped to
+PaDiM's 224/256 view for display only.
+
+Means over the five categories:
+| method | pixel F1 at our threshold | oracle best F1 | good test images flagged | defective flagged |
+|---|---|---|---|---|
+| PCA | 0.172 | 0.437 | 21 % | 51 % |
+| AE-L2 | 0.189 | 0.335 | 10 % | 44 % |
+| AE-SSIM | 0.055 | 0.368 | 20 % | 39 % |
+| PaDiM | **0.421** | **0.565** | 14 % | **85 %** |
+
+Per category PaDiM pixel F1 (ours / oracle): bottle 0.740 / 0.748, hazelnut 0.150 / 0.575,
+carpet 0.596 / 0.629, grid 0.285 / 0.382, leather 0.335 / 0.492.
+
+- Sanity check: the AE rows reproduce `results/ae.csv` exactly (0.785 / 0.809 and 0.792 / 0.863),
+  same split and seed. PCA and PaDiM fitted on 90 %: 0.851 / 0.899 and 0.937 / 0.971 (full data
+  0.855 / 0.899 and 0.940 / 0.971), so holding out 10 % costs almost nothing.
+- PaDiM's threshold from good images alone is close to the oracle on bottle and carpet. The gap is
+  largest on hazelnut (0.15 vs 0.58): the dust specks make the held-out maximum high, and 17.5 % of
+  good test hazelnuts are still flagged.
+- Leather exposes a train/test shift among the good images: thresholds from held-out training
+  images flag 100 % (PCA), 94 % (AE-SSIM) and 41 % (PaDiM) of good test images. The max rule is the
+  most conservative possible on the held-out set, yet still too low for test good images.
+- AE-SSIM has the worst F1 at our threshold (0.055) despite a decent oracle F1: its 1 - SSIM map
+  on good images is high wherever texture is hard to reconstruct, which pushes the threshold up.
+- Carpet grid (best slide figure): only PaDiM localises the cut and the hole; PCA and both AEs
+  catch only the colour stain, the defect that changes pixel intensity rather than structure.
+- Run: 91 min on CPU (AE retraining dominates), peak 1.9 GB RAM.
