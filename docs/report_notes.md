@@ -334,3 +334,23 @@ hazelnut image 0.809 -> 0.743 (0.646 at PCA-50), pixel 0.975 -> 0.976.
 - Cost of PCA: about twice the fit time (second pass) and more memory (peak 1.9 GB vs 1.3 GB).
 - d = 200 not run: the per-position covariances scale with d^2 and the estimated peak (~3 GB)
   exceeds the laptop's free RAM. Paper reference: Rd200 97.0 vs Rd100 96.7 (+0.3 pp).
+
+### 6e: training-set size (`--study fraction` -> `results/ablation_fraction.csv`, figure `ablation_fraction.png`)
+Seeded random subsets of train/good (`data.train_subset`); test set unchanged. d = 100, eps = 0.01.
+
+| training images | mean image AUROC | mean pixel AUROC | grid image / pixel |
+|---|---|---|---|
+| 10 % (21-39 images) | 0.904 | 0.945 | 0.760 / 0.811 |
+| 25 % (52-98) | 0.928 | 0.964 | 0.870 / 0.895 |
+| 50 % (104-196) | 0.937 | 0.969 | 0.911 / 0.913 |
+| 100 % (209-391) | 0.940 | 0.971 | 0.924 / 0.924 |
+| 10-shot (10 images) | 0.834 | 0.919 | 0.490 / 0.704 |
+
+- Diminishing returns: half of the data gives 0.937 / 0.969, within 0.3 pp of the full set.
+  Even 10 % keeps mean pixel AUROC at 0.945, far above PCA (0.899) and the AEs on all data.
+- 10-shot: with 10 images and d = 100, each covariance has rank at most 9, so 91 of the 100
+  directions are set only by eps. Bottle (0.994) and leather (0.944) still work; grid falls to
+  chance (0.490 image). Grid needs the most data in every study.
+- Hazelnut image AUROC falls as data grows (0.856 at 10 % -> 0.809 at 100 %): more data gives tighter
+  covariances, which make the dust-speck false alarms stronger (same pattern as small eps).
+- Practical message: PaDiM is data-efficient; a few dozen good images are enough for most categories.

@@ -13,12 +13,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))  # make `import anomaly` work without installing
 
-from anomaly.data import MVTecDataset  # noqa: E402
+from anomaly.data import MVTecDataset, train_subset  # noqa: E402
 from anomaly.metrics import image_auroc, pixel_auroc  # noqa: E402
 from anomaly.padim import DISTANCES, LAYERS, REDUCTIONS, PaDiM  # noqa: E402
 
@@ -36,6 +36,8 @@ def parse_args(argv=None):
     p.add_argument("--sigma", type=float, default=4.0, help="Gaussian blur of the map, in pixels")
     p.add_argument("--size", type=int, default=256, help="resize side before cropping")
     p.add_argument("--crop", type=int, default=224, help="centre crop side (paper setting)")
+    p.add_argument("--train-fraction", type=float, default=1.0, help="use a seeded random part of train/good")
+    p.add_argument("--n-shot", type=int, default=None, help="use exactly this many training images")
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--seed", type=int, default=0, help="seed for the random channel choice")
     p.add_argument("--out", type=Path, default=ROOT / "results" / "padim.csv")
@@ -57,7 +59,10 @@ def evaluate(model, loader, sigma):
 
 def run_category(cat, args):
     data = dict(size=args.size, crop=args.crop, normalize=True)
-    train = DataLoader(MVTecDataset(cat, "train", **data), batch_size=args.batch_size)
+    train_set = MVTecDataset(cat, "train", **data)
+    if args.n_shot is not None or args.train_fraction < 1:
+        train_set = Subset(train_set, train_subset(len(train_set), args.train_fraction, args.n_shot, args.seed))
+    train = DataLoader(train_set, batch_size=args.batch_size)
     test = DataLoader(MVTecDataset(cat, "test", **data), batch_size=args.batch_size)  # no shuffle
 
     model = PaDiM(layers=args.layers, d=args.d, eps=args.eps, seed=args.seed, distance=args.distance,
@@ -73,7 +78,7 @@ def run_category(cat, args):
         "pixel_auroc": round(pixel_auroc(masks, maps), 4),
         "fit_s": round(t1 - t0, 2),
         "ms_per_image": round(1000 * (t2 - t1) / len(labels), 1),
-        "n_train": len(train.dataset), "n_test": len(labels),
+        "n_train": len(train.dataset), "train_fraction": args.train_fraction, "n_shot": args.n_shot, "n_test": len(labels),
         "layers": "+".join(args.layers), "d": args.d, "reduction": args.reduction, "distance": args.distance, "eps": args.eps, "sigma": args.sigma,
         "size": args.size, "crop": args.crop, "seed": args.seed, "device": model.device,
     }

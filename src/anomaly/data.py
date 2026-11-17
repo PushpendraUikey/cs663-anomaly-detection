@@ -133,3 +133,16 @@ class MVTecDataset(Dataset):
         # numpy is (H, W, C); torch convolutions expect (C, H, W)
         img = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1)))
         return img, label, torch.from_numpy(np.ascontiguousarray(mask))
+
+
+def train_subset(n, fraction=1.0, n_shot=None, seed=0):
+    """Seeded random subset of training indices 0..n-1, sorted.
+
+    n_shot: exactly that many images (few-shot setting); otherwise round(fraction * n), at least 2
+    (a covariance needs 2 samples). The same seed gives the same images for every method.
+    """
+    k = n_shot if n_shot is not None else max(2, round(fraction * n))
+    if not 2 <= k <= n:
+        raise ValueError(f"subset size must be in [2, {n}], got {k}")
+    g = torch.Generator().manual_seed(seed)
+    return torch.randperm(n, generator=g)[:k].sort().values.tolist()

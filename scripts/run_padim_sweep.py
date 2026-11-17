@@ -3,6 +3,7 @@
     python scripts/run_padim_sweep.py --study layers   # layer1 / layer1+2 / layer1+2+3, d = 64 each
     python scripts/run_padim_sweep.py --study eps      # eps = 0.001, 0.01, 0.1, 1
     python scripts/run_padim_sweep.py --study reduction --ds 50 100   # random vs PCA reduction
+    python scripts/run_padim_sweep.py --study fraction # 10/25/50/100 % of train/good, plus 10-shot
 
 Writes results/ablation_<study>.csv and results/figures/ablation_<study>.png.
 """
@@ -25,11 +26,13 @@ STUDIES = {
                ({"layers": ["layer1", "layer2"], "d": 64}, {"n_layers": 2}),
                ({"layers": ["layer1", "layer2", "layer3"], "d": 64}, {"n_layers": 3})],
     "eps": [({"eps": e}, {}) for e in (0.001, 0.01, 0.1, 1.0)],
+    "fraction": [({"train_fraction": f}, {}) for f in (0.1, 0.25, 0.5, 1.0)] + [({"n_shot": 10}, {})],
     "reduction": [({"reduction": r, "d": d}, {}) for r in ("random", "pca") for d in (50, 100, 200)],
 }
 PLOTS = {
     "layers": dict(param="n_layers", xlabel="layers used (d = 64 each)",
                    xticks={1: "layer1", 2: "layer1+2", 3: "layer1+2+3"}),
+    "fraction": dict(param="train_fraction", xlabel="fraction of the training images used", log_x=True),
     "eps": dict(param="eps", xlabel="covariance regulariser eps", log_x=True,
                 mark_x=0.01, mark_label="default"),
 }
@@ -51,7 +54,8 @@ def main():
     if cli.plot_only:
         with open(out, newline="") as f:           # CSV values are text: convert what the plot uses
             rows = [{**r, param: float(r[param]), "image_auroc": float(r["image_auroc"]),
-                     "pixel_auroc": float(r["pixel_auroc"])} for r in csv.DictReader(f)]
+                     "pixel_auroc": float(r["pixel_auroc"]), "n_shot": r.get("n_shot") or None}
+                    for r in csv.DictReader(f)]
     for overrides, extra in [] if cli.plot_only else studies:
         args = padim_defaults([])                 # every run_padim default ...
         for key, value in overrides.items():      # ... except the setting under study
@@ -67,7 +71,8 @@ def main():
         print(f"wrote {out}")
         return
     fig = ROOT / "results" / "figures" / f"ablation_{cli.study}.png"
-    plot_metric_sweep(rows, metrics=["image_auroc", "pixel_auroc"], path=fig, **PLOTS[cli.study])
+    plotted = [r for r in rows if r.get("n_shot") is None]   # n-shot rows go in the table only
+    plot_metric_sweep(plotted, metrics=["image_auroc", "pixel_auroc"], path=fig, **PLOTS[cli.study])
     print(f"wrote {out} and {fig}")
 
 
