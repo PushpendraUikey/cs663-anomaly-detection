@@ -271,3 +271,39 @@ Same features, same 100 channels, same per-position mean; only the distance chan
   is lower. Consistent with the hazelnut analysis: the dust specks that cause false alarms are
   rare-direction deviations that Mahalanobis amplifies (not verified directly).
 - Same cost: fit and inference times are unchanged.
+
+### 6b: feature layers (`run_padim_sweep.py --study layers` -> `results/ablation_layers.csv`, figure `ablation_layers.png`)
+d = 64 random channels in all three settings (layer1 has only 64 channels), so only the layers differ.
+The layer1+2+3 row is therefore not the main result (which uses d = 100).
+
+| layers | mean image AUROC | mean pixel AUROC |
+|---|---|---|
+| layer1 | 0.925 | 0.955 |
+| layer1+2 | 0.929 | 0.969 |
+| layer1+2+3 | 0.935 | 0.963 |
+
+- Adding layer2 helps localisation most (+1.4 pp mean pixel; carpet 0.952 -> 0.977, grid 0.879 -> 0.925).
+- Adding layer3 at fixed d = 64 gives +0.6 pp image but -0.6 pp pixel AUROC (grid pixel 0.925 -> 0.902):
+  with a fixed budget of 64 channels, each added layer leaves fewer channels from the finer layers.
+- Per category: grid image AUROC rises steadily with depth (0.876 -> 0.914 -> 0.927); carpet image
+  AUROC falls (0.972 -> 0.957 -> 0.947); bottle and leather are flat (already ~0.99).
+- Paper (Table I, all 15 classes, pixel): layer1 94.8, layer2 95.7, layer3 95.7, all three 97.1.
+  Differences are small in both; ours are within a single random channel draw, so do not over-read.
+
+### 6d: eps sweep (`--study eps` -> `results/ablation_eps.csv`, figure `ablation_eps.png`)
+| eps | mean image AUROC | mean pixel AUROC | grid image / pixel | hazelnut image |
+|---|---|---|---|---|
+| 0.001 | 0.939 | 0.975 | 0.953 / 0.946 | 0.758 |
+| 0.01 (default) | 0.940 | 0.971 | 0.924 / 0.924 | 0.809 |
+| 0.1 | 0.918 | 0.951 | 0.831 / 0.840 | 0.844 |
+| 1 | 0.869 | 0.914 | 0.650 / 0.693 | 0.875 |
+
+- The eps = 0.01 row reproduces `results/padim.csv` exactly (consistency check of the sweep script).
+- Large eps hurts: at eps = 1 the results approach the Euclidean ablation (grid image 0.650 vs 0.583
+  Euclidean; mean 0.869 vs 0.845), as expected since Sigma + eps I -> eps I when eps dominates the
+  eigenvalues (79 of 100 are below 0.01 on carpet).
+- Grid is the sensitive category; at eps = 0.001 its pixel AUROC is 0.946, close to the paper's
+  0.949. So part of our grid gap may come from effective regularisation strength, not from
+  bicubic/bilinear. Not adopted: eps stays 0.01 (paper value), not tuned on test data.
+- Hazelnut image AUROC moves the opposite way (0.758 -> 0.875 as eps grows): stronger
+  regularisation damps the rare-direction dust-speck false alarms, same pattern as Euclidean.

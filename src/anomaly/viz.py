@@ -16,11 +16,12 @@ TITLES = {"image_auroc": "Image AUROC", "pixel_auroc": "Pixel AUROC"}
 
 
 def plot_metric_sweep(rows, param, metrics, path, log_x=False, xlabel=None,
-                      mark_x=None, mark_label=None):
+                      mark_x=None, mark_label=None, xticks=None):
     """One panel per metric, one line per category, `param` on the x-axis.
 
     rows: list of dicts, each with keys "category", param and every metric.
     mark_x: optional x value to highlight with a dashed line (e.g. the chosen k).
+    xticks: optional {x value: label} to name the swept settings (e.g. {1: "layer1"}).
     """
     categories = list(dict.fromkeys(r["category"] for r in rows))  # keep order, drop repeats
     fig, axes = plt.subplots(1, len(metrics), figsize=(5 * len(metrics), 4),
@@ -36,6 +37,8 @@ def plot_metric_sweep(rows, param, metrics, path, log_x=False, xlabel=None,
             ticks = sorted({r[param] for r in rows})
             ax.set_xticks(ticks, [str(t) for t in ticks])  # label the swept values, not powers of 10
             ax.minorticks_off()
+        if xticks:
+            ax.set_xticks(list(xticks), list(xticks.values()))
         if mark_x is not None:
             ax.axvline(mark_x, color="#888888", linestyle="--", linewidth=1, zorder=0)
             if mark_label:

@@ -23,7 +23,7 @@ from anomaly.metrics import image_auroc, pixel_auroc  # noqa: E402
 from anomaly.padim import DISTANCES, LAYERS, PaDiM  # noqa: E402
 
 
-def parse_args():
+def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--categories", nargs="+", default=["carpet", "grid", "leather", "bottle", "hazelnut"])
     p.add_argument("--layers", nargs="+", default=list(LAYERS), choices=LAYERS)
@@ -37,7 +37,7 @@ def parse_args():
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--seed", type=int, default=0, help="seed for the random channel choice")
     p.add_argument("--out", type=Path, default=ROOT / "results" / "padim.csv")
-    return p.parse_args()
+    return p.parse_args(argv)   # argv=None reads the command line
 
 
 def evaluate(model, loader, sigma):
