@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 from scipy.ndimage import gaussian_filter
 
-from anomaly.align import estimate_alignment, gaussian_pyramid, match_shift, warp, zncc
+from anomaly.align import (estimate_alignment, gaussian_pyramid, match_shift, random_misalignment, warp,
+                           zncc)
 
 
 def _smooth_image(seed=0, size=64):
@@ -81,3 +82,12 @@ def test_estimate_alignment_undoes_a_known_rotation_and_shift(angle, shift):
     aligned = warp(image, found_angle, found_shift)
     assert zncc(aligned[inner], reference[inner]) > 0.95
     assert score > 0.9
+
+
+def test_random_misalignment_is_seeded_and_in_range():
+    a = random_misalignment(7, 30, 16, seed=0)
+    assert a == random_misalignment(7, 30, 16, seed=0)
+    assert a != random_misalignment(8, 30, 16, seed=0)
+    for i in range(50):
+        angle, (dy, dx) = random_misalignment(i, 30, 16)
+        assert -30 <= angle <= 30 and -16 <= dy <= 16 and -16 <= dx <= 16

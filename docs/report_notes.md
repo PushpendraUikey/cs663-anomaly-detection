@@ -389,3 +389,55 @@ Seeded random subsets of train/good (`data.train_subset`); test set unchanged. d
 - Lesson from the first failing test: if the texture is weak, ZNCC is dominated by the object
   outline; a round outline is the same at every angle, so the rotation cannot be identified.
   Rotationally symmetric objects (hazelnut, metal_nut outline) depend on their inner texture.
+
+### 7c: misalignment experiment (`scripts/run_misalign.py` -> `results/misalign.csv`, `figures/misalign.png`)
+Setup: PaDiM main settings. Synthetic misalignment of test images: rotation uniform in +-30 degrees,
+shift uniform in +-16 px at 224 (seeded per image, `random_misalignment`); mask warped identically.
+Alignment: every image (train and test) aligned to a reference with `estimate_alignment`
+(36 angles, shift search +-48 px). Reference = mean training image for bottle (fixed pose), the first
+training image for hazelnut, screw and metal_nut (random poses: a mean would be a blur).
+Augmentation: training set + one randomly rotated/shifted copy of each image (same range, other seed).
+Example figure: `figures/misalign_examples.png` (reference | test | misaligned | aligned).
+
+Image AUROC:
+| condition | bottle | hazelnut | screw | metal_nut |
+|---|---|---|---|---|
+| original | 0.996 | 0.809 | 0.751 | 0.969 |
+| misaligned | 0.321 | 0.703 | 0.499 | 0.439 |
+| misaligned + our alignment | 0.588 | **0.880** | **0.641** | 0.611 |
+| misaligned + augmentation | **0.975** | 0.809 | 0.584 | **0.666** |
+| original + our alignment | 0.997 | **0.868** | **0.847** | 0.917 |
+
+Pixel AUROC:
+| condition | bottle | hazelnut | screw | metal_nut |
+|---|---|---|---|---|
+| original | 0.981 | 0.975 | 0.973 | 0.973 |
+| misaligned | 0.742 | 0.941 | 0.927 | 0.760 |
+| misaligned + our alignment | 0.883 | 0.968 | 0.963 | 0.909 |
+| misaligned + augmentation | 0.963 | 0.963 | 0.944 | 0.914 |
+| original + our alignment | 0.933 | 0.968 | 0.984 | 0.946 |
+
+Talking points:
+- PaDiM is very sensitive to misalignment: up to 30 degrees / 16 px drops image AUROC to chance or
+  below (bottle 0.996 -> 0.321, metal_nut 0.969 -> 0.439, screw 0.751 -> 0.499). Its Gaussian is per
+  position, so a moved object puts every patch in the "wrong" position model.
+- Our alignment recovers a large part in every category (image: bottle +27 pp, hazelnut +18,
+  screw +14, metal_nut +17; pixel: +3 to +15 pp).
+- **Naturally misaligned categories (main result of the extension): aligning train and test of the
+  original data improves screw from 0.751 to 0.847 image AUROC (pixel 0.973 -> 0.984) and hazelnut
+  from 0.809 to 0.868.** Screws lie at random angles in MVTec; PaDiM alone models them poorly.
+- Augmentation vs alignment: augmentation wins on bottle (0.975) and metal_nut, alignment wins on
+  hazelnut and screw. Augmentation costs 2x the training images and fit time; alignment costs
+  ~40-60 ms per image at test time. Note: augmentation used exactly the test perturbation range,
+  which favours it (it knew the distribution).
+- Cost of aligning already-aligned data: bottle and metal_nut pixel AUROC drop (0.981 -> 0.933,
+  0.973 -> 0.946) and metal_nut image 0.969 -> 0.917: small alignment errors and an extra bilinear
+  resampling blur the fine detail. Alignment should be used only where poses vary.
+- Why misaligned + align is still weak on bottle (0.588): rotation fills the image corners with
+  replicated border pixels (streaks) that no training image contains. 19 of 20 good bottles had
+  their map maximum within 20 px of the edge (1 of 20 without the synthetic misalignment).
+  Diagnostic only: max over the inner 184 x 184 gives 0.748. Part artefact of the synthetic setup,
+  part alignment error. A real camera would see real background there.
+- Hazelnut: alignment ZNCC only ~0.77 (every nut has a different shape), but it still helps.
+- Runtime: alignment ~75 ms per image on CPU (included in ms_per_image: ~90-115 vs ~50-75 ms).
+  Peak RAM 2.1 GB (augmented training sets).

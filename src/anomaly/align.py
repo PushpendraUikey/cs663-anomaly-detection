@@ -107,3 +107,13 @@ def estimate_alignment(reference, image, angles=np.arange(-180, 180, 10), levels
 
     score = zncc(warp(image.astype(np.float64), angle, shift), reference)
     return float(angle), (float(shift[0]), float(shift[1])), score
+
+
+def random_misalignment(index, max_angle, max_shift, seed=0):
+    """Seeded random (angle, (dy, dx)) for image `index`: angle uniform in [-max_angle, max_angle]
+    degrees, each shift component uniform in [-max_shift, max_shift] pixels. Same index and seed
+    always give the same perturbation, so every method sees identical misaligned test images."""
+    rng = np.random.default_rng([seed, index])
+    angle = rng.uniform(-max_angle, max_angle)
+    dy, dx = rng.uniform(-max_shift, max_shift, size=2)
+    return float(angle), (float(dy), float(dx))

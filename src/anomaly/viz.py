@@ -3,6 +3,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # render to files only; no display window needed
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Fixed colour per category, so a category looks the same in every figure.
 # Colourblind-checked categorical palette, always assigned in this order.
@@ -51,6 +52,30 @@ def plot_metric_sweep(rows, param, metrics, path, log_x=False, xlabel=None,
         ax.spines[["top", "right"]].set_visible(False)
     axes[0, 0].set_ylabel("AUROC")
     # legend outside the plot area so it can never cover a line
+    axes[0, -1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_grouped_bars(rows, group, bar, metrics, path, bar_order=None, colors=None):
+    """One panel per metric: groups (e.g. categories) on the x-axis, one bar per `bar` value."""
+    groups = list(dict.fromkeys(r[group] for r in rows))
+    bars = bar_order or list(dict.fromkeys(r[bar] for r in rows))
+    width = 0.8 / len(bars)
+    fig, axes = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 4), sharey=True, squeeze=False)
+    for ax, metric in zip(axes[0], metrics):
+        for j, b in enumerate(bars):
+            ys = [next((r[metric] for r in rows if r[group] == g and r[bar] == b), np.nan) for g in groups]
+            xs = np.arange(len(groups)) + (j - (len(bars) - 1) / 2) * width
+            ax.bar(xs, ys, width, label=b, color=(colors or {}).get(b))
+        ax.axhline(0.5, color="#888888", linestyle=":", linewidth=1)   # chance level
+        ax.set_xticks(np.arange(len(groups)), [TITLES.get(g, g) for g in groups])
+        ax.set_title(TITLES.get(metric, metric))
+        ax.set_ylim(0.3, 1.0)
+        ax.grid(True, axis="y", color="#e5e5e5", linewidth=0.8)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0, 0].set_ylabel("AUROC")
     axes[0, -1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
     fig.tight_layout()
     fig.savefig(path, dpi=150, bbox_inches="tight")
