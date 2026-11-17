@@ -6,7 +6,8 @@ import torch
 
 from skimage.metrics import structural_similarity
 
-from anomaly.ae import AutoEncoder, split_train_val, ssim_loss, ssim_map, train_autoencoder
+from anomaly.ae import (AutoEncoder, predict_autoencoder, split_train_val, ssim_loss, ssim_map,
+                        train_autoencoder)
 
 
 def test_shapes_through_the_bottleneck():
@@ -106,3 +107,42 @@ def test_early_stopping_stops_and_restores_best_weights():
                                 patience=3, device="cpu")
     assert len(history) == 4                               # epoch 1 is best, then 3 bad epochs
     assert all(torch.equal(before[k], v) for k, v in model.state_dict().items())
+
+
+# ---- anomaly maps ----
+
+class _AlwaysNormal(torch.nn.Module):
+    """Stand-in for a trained autoencoder: whatever comes in, it returns the clean image."""
+
+    def __init__(self, clean):
+        super().__init__()
+        self.clean = torch.nn.Parameter(clean)
+
+    def forward(self, x):
+        return self.clean.expand_as(x)
+
+
+def _clean_and_defective():
+    torch.manual_seed(0)
+    clean = 0.3 + 0.4 * torch.rand(1, 3, 128, 128)
+    defective = clean.clone()
+    defective[:, :, 40:60, 70:90] = 1.0                      # bright square = the defect
+    return clean, defective
+
+
+@pytest.mark.parametrize("mode", ["l2", "ssim"])
+def test_map_is_zero_for_normal_and_peaks_on_the_defect(mode):
+    clean, defective = _clean_and_defective()
+    maps, scores = predict_autoencoder(_AlwaysNormal(clean), torch.cat([clean, defective]), mode=mode)
+    assert maps.shape == (2, 128, 128) and scores.shape == (2,)
+    assert np.allclose(scores, maps.reshape(2, -1).max(axis=1))
+    assert scores[0] == pytest.approx(0, abs=1e-5)           # perfect reconstruction -> no anomaly
+    r, c = np.unravel_index(maps[1].argmax(), maps[1].shape)
+    assert 40 <= r < 60 and 70 <= c < 90                     # hottest pixel is inside the square
+    assert scores[1] > 0.1
+
+
+def test_unknown_mode_raises():
+    clean, _ = _clean_and_defective()
+    with pytest.raises(ValueError):
+        predict_autoencoder(_AlwaysNormal(clean), clean, mode="l1")

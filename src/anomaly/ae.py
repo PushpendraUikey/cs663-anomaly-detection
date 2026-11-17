@@ -5,6 +5,7 @@ latent code, so it is reconstructed as "normal" and shows up in |x - x_hat|.
 """
 import copy
 
+from scipy.ndimage import gaussian_filter
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -145,3 +146,31 @@ def train_autoencoder(model, images, loss="l2", epochs=200, batch_size=32, lr=2e
     model.load_state_dict(best_state)
     model.eval()
     return history
+
+
+@torch.no_grad()
+def predict_autoencoder(model, images, mode="l2", sigma=2.0, batch_size=32, device=None):
+    """Anomaly maps (N, H, W) and image scores (N,), as numpy.
+
+    mode "l2":   map = (x - x_hat)^2 averaged over colour channels.
+    mode "ssim": map = 1 - local SSIM(x, x_hat).
+    Then the same Gaussian smoothing and max-of-map score as PCA and PaDiM.
+    """
+    device = device or next(model.parameters()).device
+    model.eval()
+    maps = []
+    for i in range(0, len(images), batch_size):
+        x = images[i:i + batch_size].to(device)
+        x_hat = model(x)
+        if mode == "l2":
+            m = ((x - x_hat) ** 2).mean(dim=1)              # (B, H, W)
+        elif mode == "ssim":
+            m = 1 - ssim_map(x, x_hat)                      # (B, H, W)
+        else:
+            raise ValueError(f"mode must be 'l2' or 'ssim', got {mode!r}")
+        maps.append(m.cpu())
+    maps = torch.cat(maps).numpy()
+    if sigma > 0:
+        maps = gaussian_filter(maps, sigma=(0, sigma, sigma))   # within each image only
+    scores = maps.reshape(len(maps), -1).max(axis=1)
+    return maps, scores

@@ -203,3 +203,15 @@ Settings: R18, layers 1+2+3, d = 100 random (seed 0), eps = 0.01, 256 -> crop 22
 - First real run (bottle, L2, CPU): loss 0.133 -> 0.0024 in 150 epochs, still improving slowly;
   228 s for 150 epochs (1.3 s/epoch L2, 2.1 s/epoch SSIM). Training is feasible on the laptop CPU,
   so Colab is optional.
+
+### 5d: anomaly maps from the autoencoder (`predict_autoencoder` in `src/anomaly/ae.py`)
+- Map mode "l2": (x - x_hat)^2 averaged over RGB. Map mode "ssim": 1 - local SSIM(x, x_hat), window 11.
+  Then Gaussian sigma = 2 px and score = max of map: same smoothing and score rule as PCA (128 px),
+  and the same (maps, scores) output as `PCAModel.predict` and `PaDiM.predict`.
+- The map mode is independent of the training loss: one trained network can be scored both ways.
+- Preliminary check, NOT the final numbers (bottle, L2-trained, 100 epochs, stopped by the epoch
+  limit and not by early stopping, 150 s on CPU): L2 map image 0.825 / pixel 0.786; SSIM map image
+  0.938 / pixel 0.855. PCA k=50 on bottle: 0.978 / 0.949; PaDiM: 0.996 / 0.981. Inference
+  10-12 ms per image on CPU.
+- Observation: on the same reconstruction, the SSIM map beats the squared-error map by 11 pp image
+  AUROC. Final numbers come from `scripts/run_ae.py`.
