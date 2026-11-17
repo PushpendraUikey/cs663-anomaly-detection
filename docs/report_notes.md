@@ -368,3 +368,24 @@ Seeded random subsets of train/good (`data.train_subset`); test set unchanged. d
   template instead of an 11 x 11 window.
 - Tests: identity / gain-offset / inverse give 1 / 1 / -1; known shifts up to (8, 8) recovered
   exactly with score 1; a darker, lower-contrast shifted copy is still matched.
+
+### 7b: rotation search with an image pyramid (`warp`, `gaussian_pyramid`, `estimate_alignment`)
+- `warp(image, angle, (dy, dx))`: rotation about the image centre followed by a translation, as one
+  2 x 3 affine matrix [R | c - R c + t] applied by `cv2.warpAffine` with bilinear interpolation;
+  border pixels replicated.
+- `gaussian_pyramid`: blur with sigma = 1, then keep every second pixel (anti-aliasing before
+  subsampling). 224 -> 112 -> 56 -> 28.
+- `estimate_alignment` (coarse to fine):
+  1. At 28 x 28, try 36 angles (every 10 degrees over the full circle); for each, find the best shift
+     within +-4 px (= +-32 px at full size) by ZNCC template matching; keep the best angle.
+  2. At 56, 112, 224: double the shift, try angle and angle +- half the previous step
+     (5, 2.5, 1.25 degrees), re-search the shift within +-2 px.
+  Cost: 36 small searches + 3 x 3 local ones, about 60-90 ms per image on CPU. A full search at 224
+  over 360 angles x 65^2 shifts would be ~10^4 times more work.
+- Tests (synthetic object: textured disc on a dark background): rotations of 37, -120 and 0 degrees
+  with shifts up to 12 px are undone to within 0.5 degrees, ZNCC after alignment 0.995-1.000.
+  Note: the returned shift is not simply minus the applied shift, because the shift is applied after
+  the rotation (rotation and translation do not commute).
+- Lesson from the first failing test: if the texture is weak, ZNCC is dominated by the object
+  outline; a round outline is the same at every angle, so the rotation cannot be identified.
+  Rotationally symmetric objects (hazelnut, metal_nut outline) depend on their inner texture.
