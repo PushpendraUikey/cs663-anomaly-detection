@@ -133,3 +133,27 @@ def test_euclidean_matches_direct_formula_and_is_used_by_predict():
 def test_unknown_distance_raises():
     with pytest.raises(ValueError):
         PaDiM(d=8, device="cpu", weights=None, distance="cosine")
+
+
+def test_pca_reduction_is_orthonormal_and_keeps_more_variance_than_random_channels():
+    torch.manual_seed(0)
+    loader = [(torch.randn(12, 3, 32, 32), None, None)]
+    pca = PaDiM(d=8, device="cpu", weights=None, reduction="pca").fit(loader)
+    assert pca.pca_components.shape == (8, 448)
+    assert torch.allclose(pca.pca_components @ pca.pca_components.T, torch.eye(8), atol=1e-4)
+    assert pca.mean.shape == (64, 8) and pca.precision.shape == (64, 8, 8)
+
+    def pooled_variance(model):          # total variance of the reduced patch vectors
+        e = model.embed(loader[0][0]).permute(0, 2, 3, 1).reshape(-1, 8)
+        return e.var(dim=0).sum().item()
+
+    rnd = PaDiM(d=8, device="cpu", weights=None).fit(loader)
+    assert pooled_variance(pca) > pooled_variance(rnd)    # PCA keeps the highest-variance directions
+    assert 0 < pca.pca_explained <= 1
+    maps, scores = pca.predict(torch.randn(2, 3, 32, 32), sigma=1.0)
+    assert maps.shape == (2, 32, 32) and scores.shape == (2,)
+
+
+def test_unknown_reduction_raises():
+    with pytest.raises(ValueError):
+        PaDiM(d=8, device="cpu", weights=None, reduction="lda")

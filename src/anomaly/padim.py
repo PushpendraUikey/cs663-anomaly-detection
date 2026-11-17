@@ -13,6 +13,7 @@ from torchvision.models import ResNet18_Weights, resnet18
 LAYERS = ("layer1", "layer2", "layer3")
 LAYER_CHANNELS = {"layer1": 64, "layer2": 128, "layer3": 256}
 DISTANCES = ("mahalanobis", "euclidean")
+REDUCTIONS = ("random", "pca")
 
 
 class FeatureExtractor(nn.Module):
@@ -85,7 +86,11 @@ def gaussian_from_sums(n, s1, s2, eps):
 
 class PaDiM:
     def __init__(self, layers=LAYERS, d=100, eps=0.01, seed=0, device=None,
-                 weights=ResNet18_Weights.IMAGENET1K_V1, distance="mahalanobis"):
+                 weights=ResNet18_Weights.IMAGENET1K_V1, distance="mahalanobis",
+                 reduction="random"):
+        if reduction not in REDUCTIONS:
+            raise ValueError(f"reduction must be one of {REDUCTIONS}, got {reduction!r}")
+        self.reduction = reduction
         if distance not in DISTANCES:
             raise ValueError(f"distance must be one of {DISTANCES}, got {distance!r}")
         self.distance = distance
@@ -100,10 +105,37 @@ class PaDiM:
     def embed(self, images):
         """(B, 3, H, W) normalised images -> (B, d, H/4, W/4) embeddings on CPU."""
         feats = self.extractor(images.to(self.device))
-        return feats[:, self.idx].cpu()
+        if self.reduction == "random":
+            return feats[:, self.idx].cpu()                     # keep d of the C channels
+        # pca: project every patch vector onto the top-d principal directions
+        centred = feats - self.pca_mean[None, :, None, None]
+        return torch.einsum("dc,bchw->bdhw", self.pca_components, centred).cpu()
+
+    def fit_pca(self, loader):
+        """Principal directions of all training patch vectors (all images, all positions pooled).
+
+        Streams s1 = sum x and s2 = sum x x^T over the C-dim patch vectors, then takes the
+        top-d eigenvectors of the C x C covariance. Ablation: PCA reduction vs random channels.
+        """
+        n, s1, s2 = 0, 0.0, 0.0
+        for images, _, _ in loader:
+            f = self.extractor(images.to(self.device))          # (B, C, H, W)
+            f = f.permute(0, 2, 3, 1).reshape(-1, f.shape[1])   # (B*H*W, C): one row per patch
+            s1 = s1 + f.sum(dim=0).double().cpu()
+            s2 = s2 + (f.T @ f).double().cpu()                  # (C, C)
+            n += len(f)
+        mean = s1 / n
+        cov = (s2 - n * torch.outer(mean, mean)) / (n - 1)
+        eigvals, eigvecs = torch.linalg.eigh(cov)               # ascending eigenvalues, columns = vectors
+        top = eigvecs[:, -self.d:].flip(dims=[1])               # top-d, largest first
+        self.pca_mean = mean.float().to(self.device)            # (C,)
+        self.pca_components = top.T.float().to(self.device)     # (d, C), orthonormal rows
+        self.pca_explained = (eigvals[-self.d:].sum() / eigvals.sum()).item()
 
     def fit(self, loader):
         """loader yields (images, labels, masks) batches of defect-free images."""
+        if self.reduction == "pca":
+            self.fit_pca(loader)                                # first pass: learn the projection
         n, s1, s2 = 0, 0.0, 0.0
         for images, _, _ in loader:
             e = self.embed(images)                              # (B, d, H, W)

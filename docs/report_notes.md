@@ -307,3 +307,30 @@ The layer1+2+3 row is therefore not the main result (which uses d = 100).
   bicubic/bilinear. Not adopted: eps stays 0.01 (paper value), not tuned on test data.
 - Hazelnut image AUROC moves the opposite way (0.758 -> 0.875 as eps grows): stronger
   regularisation damps the rare-direction dust-speck false alarms, same pattern as Euclidean.
+
+### 6c: random vs PCA reduction (`--study reduction --ds 50 100` -> `results/ablation_reduction.csv`)
+PCA reduction (`PaDiM.fit_pca`): top-d eigenvectors of the 448 x 448 covariance of all training
+patch vectors pooled over images and positions (one extra pass, streaming sums); every patch vector
+is projected onto them. Everything after the reduction is unchanged.
+
+| reduction, d | mean image AUROC | mean pixel AUROC | mean fit time |
+|---|---|---|---|
+| random, 50 | 0.926 | 0.954 | 14 s |
+| random, 100 (main) | 0.940 | 0.971 | 19 s |
+| PCA, 50 | 0.914 | 0.971 | 33 s |
+| PCA, 100 | 0.939 | **0.980** | 37 s |
+
+Per category at d = 100 (random -> PCA): carpet image 0.973 -> 0.996, pixel 0.984 -> 0.988;
+grid image 0.924 -> 0.962, pixel 0.924 -> 0.963; leather 0.996 -> 1.000; bottle unchanged;
+hazelnut image 0.809 -> 0.743 (0.646 at PCA-50), pixel 0.975 -> 0.976.
+
+- The random-100 row reproduces `results/padim.csv` exactly.
+- **Our result differs from the paper.** Paper Table II (R18, all 15 classes, pixel): Rd100 96.7 vs
+  PCA100 93.5, random clearly better. Ours (5 classes): PCA is better on pixel AUROC at both d
+  (PCA-50 equals random-100) and on image AUROC for four of five categories. Not explained; possible
+  reasons (untested): 5 vs 15 categories, a single random seed, and the paper does not specify how
+  its PCA was fitted (per position vs pooled). Report as an observation, not as a contradiction.
+- Hazelnut image AUROC is the exception again (PCA much worse); mean image AUROC is therefore equal.
+- Cost of PCA: about twice the fit time (second pass) and more memory (peak 1.9 GB vs 1.3 GB).
+- d = 200 not run: the per-position covariances scale with d^2 and the estimated peak (~3 GB)
+  exceeds the laptop's free RAM. Paper reference: Rd200 97.0 vs Rd100 96.7 (+0.3 pp).

@@ -2,6 +2,7 @@
 
     python scripts/run_padim_sweep.py --study layers   # layer1 / layer1+2 / layer1+2+3, d = 64 each
     python scripts/run_padim_sweep.py --study eps      # eps = 0.001, 0.01, 0.1, 1
+    python scripts/run_padim_sweep.py --study reduction --ds 50 100   # random vs PCA reduction
 
 Writes results/ablation_<study>.csv and results/figures/ablation_<study>.png.
 """
@@ -24,6 +25,7 @@ STUDIES = {
                ({"layers": ["layer1", "layer2"], "d": 64}, {"n_layers": 2}),
                ({"layers": ["layer1", "layer2", "layer3"], "d": 64}, {"n_layers": 3})],
     "eps": [({"eps": e}, {}) for e in (0.001, 0.01, 0.1, 1.0)],
+    "reduction": [({"reduction": r, "d": d}, {}) for r in ("random", "pca") for d in (50, 100, 200)],
 }
 PLOTS = {
     "layers": dict(param="n_layers", xlabel="layers used (d = 64 each)",
@@ -38,16 +40,19 @@ def main():
     p.add_argument("--study", required=True, choices=STUDIES)
     p.add_argument("--categories", nargs="+", default=None, help="default: the five primary categories")
     p.add_argument("--plot-only", action="store_true", help="redraw the figure from the existing CSV")
+    p.add_argument("--ds", nargs="+", type=int, default=None,
+                   help="reduction study only: restrict to these d (d = 200 needs about 3 GB of free RAM)")
     cli = p.parse_args()
 
     out = ROOT / "results" / f"ablation_{cli.study}.csv"
     rows = []
-    param = PLOTS[cli.study]["param"]
+    param = PLOTS.get(cli.study, {}).get("param")
+    studies = [(o, e) for o, e in STUDIES[cli.study] if not cli.ds or o.get("d") in cli.ds]
     if cli.plot_only:
         with open(out, newline="") as f:           # CSV values are text: convert what the plot uses
             rows = [{**r, param: float(r[param]), "image_auroc": float(r["image_auroc"]),
                      "pixel_auroc": float(r["pixel_auroc"])} for r in csv.DictReader(f)]
-    for overrides, extra in [] if cli.plot_only else STUDIES[cli.study]:
+    for overrides, extra in [] if cli.plot_only else studies:
         args = padim_defaults([])                 # every run_padim default ...
         for key, value in overrides.items():      # ... except the setting under study
             setattr(args, key, value)
@@ -58,6 +63,9 @@ def main():
                 writer = csv.DictWriter(f, fieldnames=rows[0].keys())
                 writer.writeheader()
                 writer.writerows(rows)
+    if cli.study not in PLOTS:                    # the reduction study is reported as a table
+        print(f"wrote {out}")
+        return
     fig = ROOT / "results" / "figures" / f"ablation_{cli.study}.png"
     plot_metric_sweep(rows, metrics=["image_auroc", "pixel_auroc"], path=fig, **PLOTS[cli.study])
     print(f"wrote {out} and {fig}")
